@@ -487,20 +487,15 @@ async function restoreSessions() {
   } catch { return; }
 
   for (const s of sessions) {
+    const prefs = { theme: s.theme || 'iterm2', fontSize: s.font_size || 13 };
     if (s.session_type === 'local') {
-      openLocal(s.id, true);
-    } else if (s.session_type === 'start_ssh' && s.host_id) {
+      openLocal(s.id, true, prefs);
+    } else if ((s.session_type === 'start_ssh' || s.session_type === 'ssh') && s.host_id) {
       const h = hosts.find(x => x.id === s.host_id);
-      if (h) openSSH(s.host_id, s.id, true);
-    } else if (s.session_type === 'ssh' && s.host_id) {
+      if (h) openSSH(s.host_id, s.id, true, prefs);
+    } else if ((s.session_type === 'start_mosh' || s.session_type === 'mosh') && s.host_id) {
       const h = hosts.find(x => x.id === s.host_id);
-      if (h) openSSH(s.host_id, s.id, true);
-    } else if (s.session_type === 'start_mosh' && s.host_id) {
-      const h = hosts.find(x => x.id === s.host_id);
-      if (h) openMosh(s.host_id, s.id, true);
-    } else if (s.session_type === 'mosh' && s.host_id) {
-      const h = hosts.find(x => x.id === s.host_id);
-      if (h) openMosh(s.host_id, s.id, true);
+      if (h) openMosh(s.host_id, s.id, true, prefs);
     }
   }
 }
@@ -528,7 +523,7 @@ function generateSessionId() {
 }
 
 // ── Tabs & terminals ───────────────────────────────────────────────────────
-function createTab(label, theme, sessionType, hostId, sessionId) {
+function createTab(label, theme, sessionType, hostId, sessionId, fontSize) {
   const id = `tab_${++tabCounter}`;
   const tab = {
     id,
@@ -536,6 +531,7 @@ function createTab(label, theme, sessionType, hostId, sessionId) {
     connected: false,
     persistent: true,
     theme: theme || 'iterm2',
+    fontSize: fontSize || 13,
     ws: null,
     sessionType: sessionType || 'local',
     hostId: hostId || null,
@@ -627,7 +623,7 @@ function initTerm(tab) {
   const term = new Terminal({
     theme: THEMES[tab.theme] || THEMES.iterm2,
     fontFamily: "'Cascadia Code','Fira Code','JetBrains Mono','Courier New',monospace",
-    fontSize: 13,
+    fontSize: tab.fontSize || 13,
     lineHeight: 1.2,
     cursorBlink: true,
     cursorStyle: 'block',
@@ -746,6 +742,13 @@ function applyTheme(id, name) {
   const accent = THEME_ACCENT[name] || '#00ff41';
   tab.tabEl.style.setProperty('--tab-accent', accent);
   tab.tabEl.querySelector('.tab-dot').style.background = accent;
+  // Persist to session DB
+  persistTabPrefs(tab);
+  // Also update the host profile so next launch uses this theme
+  if (tab.hostId) {
+    const h = hosts.find(x => x.id === tab.hostId);
+    if (h) { h.theme = name; api('PUT', `/api/hosts/${tab.hostId}`, h).catch(() => {}); }
+  }
 }
 
 function changeFontSize(id, delta) {
@@ -753,7 +756,17 @@ function changeFontSize(id, delta) {
   if (!tab?.term) return;
   const next = Math.max(8, Math.min(32, tab.term.options.fontSize + delta));
   tab.term.options.fontSize = next;
+  tab.fontSize = next;
   tab.fitAddon?.fit();
+  persistTabPrefs(tab);
+}
+
+function persistTabPrefs(tab) {
+  if (!tab.sessionId) return;
+  api('PATCH', `/api/sessions/${tab.sessionId}`, {
+    theme: tab.theme,
+    font_size: tab.fontSize || tab.term?.options.fontSize || 13,
+  }).catch(() => {});
 }
 
 // ── WebSocket connection ───────────────────────────────────────────────────
@@ -815,8 +828,10 @@ function openWs(tab, startMsg) {
 }
 
 // ── Open sessions ──────────────────────────────────────────────────────────
-function openLocal(sessionId, restore) {
-  const tab = createTab('local', 'iterm2', 'local', null, sessionId);
+function openLocal(sessionId, restore, prefs) {
+  const theme    = prefs?.theme    || 'iterm2';
+  const fontSize = prefs?.fontSize || 13;
+  const tab = createTab('local', theme, 'local', null, sessionId, fontSize);
   tab._reconnect = () => openWs(tab, { type: 'start_local', cols: tab.term?.cols || 220, rows: tab.term?.rows || 50 });
   setTimeout(async () => {
     await replayScrollback(tab);
@@ -824,10 +839,12 @@ function openLocal(sessionId, restore) {
   }, 80);
 }
 
-function openSSH(hostId, sessionId, restore) {
+function openSSH(hostId, sessionId, restore, prefs) {
   const h = hosts.find(x => x.id === hostId);
   if (!h) return;
-  const tab = createTab(h.label || h.hostname, h.theme, 'ssh', hostId, sessionId);
+  const theme    = prefs?.theme    || h.theme || 'iterm2';
+  const fontSize = prefs?.fontSize || 13;
+  const tab = createTab(h.label || h.hostname, theme, 'ssh', hostId, sessionId, fontSize);
   const doConnect = () => openWs(tab, {
     type: 'start_ssh',
     host_id: hostId,
@@ -842,10 +859,12 @@ function openSSH(hostId, sessionId, restore) {
   }, 80);
 }
 
-function openMosh(hostId, sessionId, restore) {
+function openMosh(hostId, sessionId, restore, prefs) {
   const h = hosts.find(x => x.id === hostId);
   if (!h) return;
-  const tab = createTab(`mosh:${h.label || h.hostname}`, h.theme, 'mosh', hostId, sessionId);
+  const theme    = prefs?.theme    || h.theme || 'iterm2';
+  const fontSize = prefs?.fontSize || 13;
+  const tab = createTab(`mosh:${h.label || h.hostname}`, theme, 'mosh', hostId, sessionId, fontSize);
   const doConnect = () => openWs(tab, {
     type: 'start_mosh',
     host_id: hostId,

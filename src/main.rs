@@ -56,7 +56,7 @@ async fn main() {
         .route("/api/keys/:id", delete(api::delete_key))
         // Persistent sessions
         .route("/api/sessions",                    get(api::list_sessions))
-        .route("/api/sessions/:id",                delete(api::delete_session))
+        .route("/api/sessions/:id",                delete(api::delete_session).patch(api::patch_session))
         .route("/api/sessions/:id/scrollback",     get(api::get_scrollback))
         // WebSocket
         .route("/ws", get(ws_handler::ws_upgrade))

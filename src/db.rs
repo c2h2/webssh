@@ -64,8 +64,12 @@ pub struct SessionRecord {
     pub host_id:      String,
     pub label:        String,
     pub theme:        String,
+    #[serde(default = "default_font_size")]
+    pub font_size:    i64,
     pub updated_at:   i64,
 }
+
+fn default_font_size() -> i64 { 13 }
 
 // ── Db handle ───────────────────────────────────────────────────────────────
 
@@ -113,6 +117,7 @@ impl Db {
                 host_id      TEXT NOT NULL DEFAULT '',
                 label        TEXT NOT NULL DEFAULT '',
                 theme        TEXT NOT NULL DEFAULT 'hacker',
+                font_size    INTEGER NOT NULL DEFAULT 13,
                 updated_at   INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(username, updated_at);
@@ -125,6 +130,10 @@ impl Db {
             CREATE INDEX IF NOT EXISTS idx_scrollback_session
                 ON scrollback(session_id, seq);",
         )?;
+        // Migrations for existing databases
+        conn.execute_batch(
+            "ALTER TABLE sessions ADD COLUMN font_size INTEGER NOT NULL DEFAULT 13;",
+        ).ok(); // ok() = ignore error if column already exists
         Ok(Self { conn: Arc::new(Mutex::new(conn)), redis: None })
     }
 
@@ -262,13 +271,23 @@ impl Db {
     pub fn upsert_session(&self, rec: &SessionRecord) -> anyhow::Result<()> {
         let now = now_secs();
         self.conn.lock().execute(
-            "INSERT INTO sessions (id, username, session_type, host_id, label, theme, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7)
+            "INSERT INTO sessions (id, username, session_type, host_id, label, theme, font_size, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)
              ON CONFLICT(id) DO UPDATE SET
                session_type=excluded.session_type, host_id=excluded.host_id,
-               label=excluded.label, theme=excluded.theme, updated_at=excluded.updated_at",
+               label=excluded.label, theme=excluded.theme, font_size=excluded.font_size,
+               updated_at=excluded.updated_at",
             params![rec.id, rec.username, rec.session_type, rec.host_id,
-                    rec.label, rec.theme, now],
+                    rec.label, rec.theme, rec.font_size, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn patch_session_prefs(&self, id: &str, username: &str, theme: &str, font_size: i64) -> anyhow::Result<()> {
+        self.conn.lock().execute(
+            "UPDATE sessions SET theme=?1, font_size=?2, updated_at=?3
+             WHERE id=?4 AND username=?5",
+            params![theme, font_size, now_secs(), id, username],
         )?;
         Ok(())
     }
@@ -276,7 +295,7 @@ impl Db {
     pub fn list_sessions(&self, username: &str) -> anyhow::Result<Vec<SessionRecord>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, username, session_type, host_id, label, theme, updated_at
+            "SELECT id, username, session_type, host_id, label, theme, font_size, updated_at
              FROM sessions WHERE username=?1 ORDER BY updated_at DESC",
         )?;
         let rows = stmt.query_map(params![username], |r| Ok(SessionRecord {
@@ -286,7 +305,8 @@ impl Db {
             host_id:      r.get(3)?,
             label:        r.get(4)?,
             theme:        r.get(5)?,
-            updated_at:   r.get(6)?,
+            font_size:    r.get(6)?,
+            updated_at:   r.get(7)?,
         }))?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }

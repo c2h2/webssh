@@ -398,6 +398,22 @@ pub async fn delete_session(
     Ok(Json(json!({"ok": true})))
 }
 
+pub async fn patch_session(
+    State(state): State<SharedState>,
+    jar: CookieJar,
+    Path(id): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let st = state.read().await;
+    let username = session_user(&jar, &st.server_key)
+        .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "Not logged in"))?;
+    let theme     = body["theme"].as_str().unwrap_or("").to_string();
+    let font_size = body["font_size"].as_i64().unwrap_or(13);
+    st.db.patch_session_prefs(&id, &username, &theme, font_size)
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    Ok(Json(json!({"ok": true})))
+}
+
 pub async fn get_scrollback(
     State(state): State<SharedState>,
     jar: CookieJar,
