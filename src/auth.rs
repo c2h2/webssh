@@ -89,11 +89,14 @@ pub fn register(db: &Db, username: &str, password: &str) -> anyhow::Result<()> {
     if db.get_user(username).is_some() {
         anyhow::bail!("Username already taken");
     }
+    let is_admin = db.user_count() == 0; // first user becomes admin
     let hash = hash_password(password)?;
     db.upsert_user(&UserRecord {
         username:      username.to_string(),
         password_hash: hash,
         vault_key_hex: String::new(),
+        is_admin,
+        is_disabled: false,
     })
 }
 
@@ -102,6 +105,9 @@ pub fn login(db: &Db, username: &str, password: &str) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Invalid credentials"))?;
     if !verify_password(password, &user.password_hash) {
         anyhow::bail!("Invalid credentials");
+    }
+    if user.is_disabled {
+        anyhow::bail!("Account disabled");
     }
     Ok(())
 }

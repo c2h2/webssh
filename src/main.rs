@@ -54,6 +54,11 @@ async fn main() {
         // Keys
         .route("/api/keys",     get(api::get_keys).post(api::add_key))
         .route("/api/keys/:id", delete(api::delete_key))
+        // Admin
+        .route("/api/admin/settings",              get(api::admin_get_settings).post(api::admin_set_settings))
+        .route("/api/admin/users",                 get(api::admin_list_users))
+        .route("/api/admin/users/:username/disable", post(api::admin_set_user_disabled))
+        .route("/api/admin/users/:username",       delete(api::admin_delete_user))
         // Persistent sessions
         .route("/api/sessions",                    get(api::list_sessions))
         .route("/api/sessions/:id",                delete(api::delete_session).patch(api::patch_session))

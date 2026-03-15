@@ -146,8 +146,10 @@ async function checkAuth() {
     currentUser = st.username;
     document.getElementById('sidebar-user').textContent = st.username;
     document.getElementById('auth-modal').style.display = 'none';
+    document.getElementById('btn-admin').style.display = st.is_admin ? '' : 'none';
     return true;
   }
+  document.getElementById('btn-admin').style.display = 'none';
   // Show auth modal
   authIsRegister = st.needs_register;
   showAuthModal();
@@ -183,6 +185,9 @@ document.getElementById('auth-submit-btn').addEventListener('click', async () =>
     document.getElementById('sidebar-user').textContent = res.username;
     document.getElementById('auth-modal').style.display = 'none';
     document.getElementById('auth-password').value = '';
+    // Refresh auth status to get is_admin flag
+    const st2 = await api('GET', '/api/auth/status');
+    document.getElementById('btn-admin').style.display = st2.is_admin ? '' : 'none';
     await onLoggedIn();
   } else {
     const hint = document.getElementById('auth-hint');
@@ -242,6 +247,60 @@ document.getElementById('settings-save-btn').addEventListener('click', async () 
     hint.style.color = '#ff4444';
   }
 });
+
+// ── Admin panel ───────────────────────────────────────────────────────────
+document.getElementById('btn-admin').addEventListener('click', openAdminPanel);
+document.getElementById('admin-close-btn').addEventListener('click', () => {
+  document.getElementById('admin-modal').style.display = 'none';
+});
+
+async function openAdminPanel() {
+  document.getElementById('admin-modal').style.display = 'flex';
+  // Load settings
+  const settings = await api('GET', '/api/admin/settings');
+  document.getElementById('admin-reg-open').checked = !!settings.registration_open;
+  // Load users
+  await refreshAdminUserList();
+}
+
+document.getElementById('admin-reg-open').addEventListener('change', async e => {
+  await api('POST', '/api/admin/settings', { registration_open: e.target.checked });
+});
+
+async function refreshAdminUserList() {
+  const users = await api('GET', '/api/admin/users');
+  const list = document.getElementById('admin-user-list');
+  list.innerHTML = '';
+  for (const u of users) {
+    const row = document.createElement('div');
+    row.className = 'admin-user-row';
+    row.innerHTML = `
+      <span class="admin-user-name">${esc(u.username)}</span>
+      ${u.is_admin  ? '<span class="admin-user-badge">admin</span>' : ''}
+      ${u.is_disabled ? '<span class="admin-user-badge disabled">disabled</span>' : ''}
+      ${u.is_admin ? '' : `
+        <button class="sm-btn btn-toggle-disable" data-user="${esc(u.username)}" data-disabled="${u.is_disabled}">
+          ${u.is_disabled ? 'enable' : 'disable'}
+        </button>
+        <button class="sm-btn btn-delete-user" data-user="${esc(u.username)}" style="color:var(--danger)">delete</button>
+      `}`;
+    row.querySelectorAll('.btn-toggle-disable').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const disabled = btn.dataset.disabled !== 'true';
+        await api('POST', `/api/admin/users/${btn.dataset.user}/disable`, { disabled });
+        await refreshAdminUserList();
+      });
+    });
+    row.querySelectorAll('.btn-delete-user').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm(`Delete user "${btn.dataset.user}"? This cannot be undone.`)) return;
+        await api('DELETE', `/api/admin/users/${btn.dataset.user}`);
+        await refreshAdminUserList();
+      });
+    });
+    list.appendChild(row);
+  }
+}
 
 // ── Vault ──────────────────────────────────────────────────────────────────
 async function checkVault() {

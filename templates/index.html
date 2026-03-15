@@ -39,6 +39,26 @@
     </div>
   </div>
 
+  <!-- Admin panel modal -->
+  <div id="admin-modal" class="modal" style="display:none">
+    <div class="modal-box" style="min-width:420px">
+      <div class="modal-title">Admin Panel</div>
+      <div class="admin-section">
+        <label class="admin-toggle-row">
+          <span>Allow new registrations</span>
+          <input type="checkbox" id="admin-reg-open">
+        </label>
+      </div>
+      <div class="admin-section">
+        <div class="admin-section-title">Users</div>
+        <div id="admin-user-list"></div>
+      </div>
+      <div class="modal-actions">
+        <button id="admin-close-btn" class="btn-ghost">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Settings modal -->
   <div id="settings-modal" class="modal" style="display:none">
     <div class="modal-box">
@@ -60,6 +80,7 @@
       <div class="sidebar-actions">
         <button id="btn-new-host" class="icon-btn" title="Add Host">+</button>
         <button id="btn-vault-lock" class="icon-btn" title="Lock Vault">&#128274;</button>
+        <button id="btn-admin" class="icon-btn" title="Admin Panel" style="display:none">&#9812;</button>
         <button id="btn-settings" class="icon-btn" title="Settings">&#9881;</button>
         <button id="btn-logout" class="icon-btn" title="Logout">&#10551;</button>
       </div>

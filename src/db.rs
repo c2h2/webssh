@@ -31,6 +31,10 @@ pub struct UserRecord {
     /// Optional hex-encoded 32-byte vault key override (empty = server default).
     #[serde(default)]
     pub vault_key_hex: String,
+    #[serde(default)]
+    pub is_admin:    bool,
+    #[serde(default)]
+    pub is_disabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,7 +91,13 @@ impl Db {
             "CREATE TABLE IF NOT EXISTS users (
                 username      TEXT PRIMARY KEY,
                 password_hash TEXT NOT NULL,
-                vault_key_hex TEXT NOT NULL DEFAULT ''
+                vault_key_hex TEXT NOT NULL DEFAULT '',
+                is_admin      INTEGER NOT NULL DEFAULT 0,
+                is_disabled   INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL DEFAULT ''
             );
             CREATE TABLE IF NOT EXISTS hosts (
                 id          TEXT PRIMARY KEY,
@@ -133,7 +143,13 @@ impl Db {
         // Migrations for existing databases
         conn.execute_batch(
             "ALTER TABLE sessions ADD COLUMN font_size INTEGER NOT NULL DEFAULT 13;",
-        ).ok(); // ok() = ignore error if column already exists
+        ).ok();
+        conn.execute_batch(
+            "ALTER TABLE users ADD COLUMN is_admin    INTEGER NOT NULL DEFAULT 0;",
+        ).ok();
+        conn.execute_batch(
+            "ALTER TABLE users ADD COLUMN is_disabled INTEGER NOT NULL DEFAULT 0;",
+        ).ok();
         Ok(Self { conn: Arc::new(Mutex::new(conn)), redis: None })
     }
 
@@ -156,23 +172,75 @@ impl Db {
     pub fn get_user(&self, username: &str) -> Option<UserRecord> {
         let conn = self.conn.lock();
         conn.query_row(
-            "SELECT username, password_hash, vault_key_hex FROM users WHERE username=?1",
+            "SELECT username, password_hash, vault_key_hex, is_admin, is_disabled
+             FROM users WHERE username=?1",
             params![username],
             |r| Ok(UserRecord {
                 username:      r.get(0)?,
                 password_hash: r.get(1)?,
                 vault_key_hex: r.get(2)?,
+                is_admin:    r.get::<_, i64>(3)? != 0,
+                is_disabled: r.get::<_, i64>(4)? != 0,
             }),
         ).ok()
     }
 
     pub fn upsert_user(&self, rec: &UserRecord) -> anyhow::Result<()> {
         self.conn.lock().execute(
-            "INSERT INTO users (username, password_hash, vault_key_hex) VALUES (?1,?2,?3)
+            "INSERT INTO users (username, password_hash, vault_key_hex, is_admin, is_disabled)
+             VALUES (?1,?2,?3,?4,?5)
              ON CONFLICT(username) DO UPDATE SET
                password_hash = excluded.password_hash,
                vault_key_hex = excluded.vault_key_hex",
-            params![rec.username, rec.password_hash, rec.vault_key_hex],
+            params![rec.username, rec.password_hash, rec.vault_key_hex,
+                    rec.is_admin as i64, rec.is_disabled as i64],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_users(&self) -> anyhow::Result<Vec<UserRecord>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT username, password_hash, vault_key_hex, is_admin, is_disabled
+             FROM users ORDER BY rowid",
+        )?;
+        let rows = stmt.query_map([], |r| Ok(UserRecord {
+            username:      r.get(0)?,
+            password_hash: r.get(1)?,
+            vault_key_hex: r.get(2)?,
+            is_admin:    r.get::<_, i64>(3)? != 0,
+            is_disabled: r.get::<_, i64>(4)? != 0,
+        }))?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    pub fn set_user_disabled(&self, username: &str, disabled: bool) -> anyhow::Result<()> {
+        self.conn.lock().execute(
+            "UPDATE users SET is_disabled=?1 WHERE username=?2",
+            params![disabled as i64, username],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_user(&self, username: &str) -> anyhow::Result<()> {
+        let conn = self.conn.lock();
+        conn.execute("DELETE FROM users WHERE username=?1 AND is_admin=0", params![username])?;
+        Ok(())
+    }
+
+    // ── Settings ──────────────────────────────────────────────────────────
+
+    pub fn get_setting(&self, key: &str, default: &str) -> String {
+        self.conn.lock()
+            .query_row("SELECT value FROM settings WHERE key=?1", params![key], |r| r.get(0))
+            .unwrap_or_else(|_| default.to_string())
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> anyhow::Result<()> {
+        self.conn.lock().execute(
+            "INSERT INTO settings (key, value) VALUES (?1,?2)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![key, value],
         )?;
         Ok(())
     }

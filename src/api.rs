@@ -46,12 +46,17 @@ pub async fn auth_status(
     jar: CookieJar,
 ) -> Json<Value> {
     let st = state.read().await;
-    let user = session_user(&jar, &st.server_key);
+    let username = session_user(&jar, &st.server_key);
     let user_count = st.db.user_count();
+    let is_admin = username.as_deref()
+        .and_then(|u| st.db.get_user(u))
+        .map(|u| u.is_admin)
+        .unwrap_or(false);
     Json(json!({
-        "logged_in": user.is_some(),
-        "username":  user.unwrap_or_default(),
+        "logged_in": username.is_some(),
+        "username":  username.unwrap_or_default(),
         "needs_register": user_count == 0,
+        "is_admin": is_admin,
     }))
 }
 
@@ -71,8 +76,20 @@ pub async fn auth_register(
     }
     let st = state.read().await;
     if st.db.user_count() > 0 {
-        if session_user(&jar, &st.server_key).is_none() {
-            return Err(err(StatusCode::UNAUTHORIZED, "Must be logged in to register new users"));
+        let caller = session_user(&jar, &st.server_key);
+        let caller_is_admin = caller.as_deref()
+            .and_then(|u| st.db.get_user(u))
+            .map(|u| u.is_admin)
+            .unwrap_or(false);
+        if !caller_is_admin {
+            // Non-admins can only register if registration is open
+            let open = st.db.get_setting("registration_open", "true");
+            if open != "true" {
+                return Err(err(StatusCode::FORBIDDEN, "Registration is closed"));
+            }
+            if caller.is_none() {
+                return Err(err(StatusCode::UNAUTHORIZED, "Must be logged in to register new users"));
+            }
         }
     }
     auth::register(&st.db, &p.username, &p.password)
@@ -424,6 +441,90 @@ pub async fn get_scrollback(
         .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "Not logged in"))?;
     let chunks = st.db.get_scrollback(&id);
     Ok(Json(json!({ "chunks": chunks })))
+}
+
+// ── Admin routes ──────────────────────────────────────────────────────────────
+
+fn require_admin(jar: &CookieJar, st: &AppState) -> Result<String, (StatusCode, Json<Value>)> {
+    let username = session_user(jar, &st.server_key)
+        .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "Not logged in"))?;
+    let user = st.db.get_user(&username)
+        .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "User not found"))?;
+    if !user.is_admin {
+        return Err(err(StatusCode::FORBIDDEN, "Admin only"));
+    }
+    Ok(username)
+}
+
+pub async fn admin_get_settings(
+    State(state): State<SharedState>,
+    jar: CookieJar,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let st = state.read().await;
+    require_admin(&jar, &st)?;
+    let open = st.db.get_setting("registration_open", "true") == "true";
+    Ok(Json(json!({ "registration_open": open })))
+}
+
+pub async fn admin_set_settings(
+    State(state): State<SharedState>,
+    jar: CookieJar,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let st = state.read().await;
+    require_admin(&jar, &st)?;
+    let open = body["registration_open"].as_bool().unwrap_or(true);
+    st.db.set_setting("registration_open", if open { "true" } else { "false" })
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    Ok(Json(json!({"ok": true})))
+}
+
+pub async fn admin_list_users(
+    State(state): State<SharedState>,
+    jar: CookieJar,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let st = state.read().await;
+    require_admin(&jar, &st)?;
+    let users = st.db.list_users()
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    let out: Vec<Value> = users.iter().map(|u| json!({
+        "username":    u.username,
+        "is_admin":    u.is_admin,
+        "is_disabled": u.is_disabled,
+    })).collect();
+    Ok(Json(json!(out)))
+}
+
+pub async fn admin_set_user_disabled(
+    State(state): State<SharedState>,
+    jar: CookieJar,
+    Path(username): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let st = state.read().await;
+    let caller = require_admin(&jar, &st)?;
+    if username == caller {
+        return Err(err(StatusCode::BAD_REQUEST, "Cannot disable yourself"));
+    }
+    let disabled = body["disabled"].as_bool().unwrap_or(false);
+    st.db.set_user_disabled(&username, disabled)
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    Ok(Json(json!({"ok": true})))
+}
+
+pub async fn admin_delete_user(
+    State(state): State<SharedState>,
+    jar: CookieJar,
+    Path(username): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let st = state.read().await;
+    let caller = require_admin(&jar, &st)?;
+    if username == caller {
+        return Err(err(StatusCode::BAD_REQUEST, "Cannot delete yourself"));
+    }
+    st.db.delete_user(&username)
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    Ok(Json(json!({"ok": true})))
 }
 
 // ── Vault helpers ─────────────────────────────────────────────────────────────
