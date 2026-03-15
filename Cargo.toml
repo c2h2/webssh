@@ -1,0 +1,39 @@
+[package]
+name = "webssh"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "webssh"
+path = "src/main.rs"
+
+[dependencies]
+axum = { version = "0.7", features = ["ws", "macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["fs", "cors"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+# Crypto
+aes-gcm = "0.10"
+pbkdf2 = { version = "0.12", features = ["hmac"] }
+sha2 = "0.10"
+rand = "0.8"
+base64 = "0.21"
+hex = "0.4"
+argon2 = "0.5"
+hmac = "0.12"
+axum-extra = { version = "0.9", features = ["cookie"] }
+# PTY / process
+nix = { version = "0.28", features = ["process", "ioctl", "term", "signal", "fs"] }
+libc = "0.2"
+# async
+futures-util = "0.3"
+# Storage
+rusqlite = { version = "0.31", features = ["bundled"] }
+redis = { version = "0.32", features = ["tokio-comp"] }
+parking_lot = "0.12"

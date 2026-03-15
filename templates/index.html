@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebSSH</title>
+<link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+</head>
+<body>
+<div id="app">
+  <!-- Auth modal -->
+  <div id="auth-modal" class="modal">
+    <div class="modal-box">
+      <div class="modal-title" id="auth-modal-title">Login</div>
+      <input type="text" id="auth-username" placeholder="Username" autocomplete="username">
+      <input type="password" id="auth-password" placeholder="Password" autocomplete="current-password">
+      <div class="modal-hint" id="auth-hint"></div>
+      <div class="modal-actions">
+        <button id="auth-submit-btn" class="btn-primary">Login</button>
+        <button id="auth-toggle-btn" class="btn-ghost">Register instead</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vault modal -->
+  <div id="vault-modal" class="modal" style="display:none">
+    <div class="modal-box">
+      <div class="modal-title" id="vault-modal-title">Unlock Vault</div>
+      <input type="password" id="vault-pw" placeholder="Vault password" autocomplete="current-password">
+      <div class="modal-hint" id="vault-hint"></div>
+      <div class="modal-actions">
+        <button id="vault-submit-btn" class="btn-primary">Unlock</button>
+        <button id="vault-skip-btn" class="btn-ghost">Skip (no passwords)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settings-modal" class="modal" style="display:none">
+    <div class="modal-box">
+      <div class="modal-title">Settings</div>
+      <label>Vault Encryption Key <span class="hint">(hex, 32 bytes / 64 chars)</span></label>
+      <input type="text" id="settings-vault-key" placeholder="leave empty to use server default" autocomplete="off" style="font-family:monospace;font-size:11px">
+      <div class="modal-hint" id="settings-hint">Your personal key overrides the server key for encrypting vault data. Leave empty to use the server-managed key.</div>
+      <div class="modal-actions">
+        <button id="settings-save-btn" class="btn-primary">Save</button>
+        <button id="settings-cancel-btn" class="btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Left sidebar -->
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <span class="logo">&#9001;/&#9002; WebSSH</span>
+      <div class="sidebar-actions">
+        <button id="btn-new-host" class="icon-btn" title="Add Host">+</button>
+        <button id="btn-vault-lock" class="icon-btn" title="Lock Vault">&#128274;</button>
+        <button id="btn-settings" class="icon-btn" title="Settings">&#9881;</button>
+        <button id="btn-logout" class="icon-btn" title="Logout">&#10551;</button>
+      </div>
+    </div>
+
+    <div id="sidebar-user" class="sidebar-user"></div>
+
+    <div class="sidebar-section-label">HOSTS</div>
+    <div id="host-list"></div>
+
+    <div class="sidebar-section-label" style="margin-top:12px">
+      KEYS
+      <button id="btn-add-key" class="inline-btn" title="Add Key">+</button>
+    </div>
+    <div id="key-list"></div>
+  </div>
+
+  <!-- Main area -->
+  <div id="main">
+    <div id="tab-bar">
+      <div id="tabs"></div>
+      <button id="btn-new-tab" class="icon-btn" title="New local terminal">+</button>
+    </div>
+    <div id="terminals"></div>
+    <div id="empty-state">
+      <div class="empty-glyph">&#9001;_&#9002;</div>
+      <div>Select a host or open a local terminal</div>
+    </div>
+  </div>
+</div>
+
+<!-- Host edit drawer -->
+<div id="host-drawer" class="drawer">
+  <div class="drawer-header">
+    <span id="drawer-title">New Host</span>
+    <button id="drawer-close" class="icon-btn">&#10005;</button>
+  </div>
+  <div class="drawer-body">
+    <label>Label</label>
+    <input type="text" id="h-label" placeholder="My Server">
+    <label>Hostname / IP</label>
+    <input type="text" id="h-hostname" placeholder="192.168.1.1">
+    <label>Port</label>
+    <input type="number" id="h-port" value="22">
+    <label>Username</label>
+    <input type="text" id="h-username" placeholder="root">
+    <label>Password <span class="hint">(stored encrypted)</span></label>
+    <input type="password" id="h-password" placeholder="leave blank if using key">
+    <label>SSH Key</label>
+    <select id="h-key"></select>
+    <label>Key Passphrase <span class="hint">(stored encrypted)</span></label>
+    <input type="password" id="h-passphrase" placeholder="optional">
+    <label>Jump Host <span class="hint">user@host:port</span></label>
+    <input type="text" id="h-jump" placeholder="bastion@10.0.0.1:22">
+    <label>Custom SSH Command <span class="hint">(overrides above, e.g. ssh -D 1080 ...)</span></label>
+    <input type="text" id="h-ssh-cmd" placeholder="ssh -L 8080:localhost:80 user@host">
+    <label>Color Scheme</label>
+    <select id="h-theme">
+      <option value="hacker">Hacker Green</option>
+      <option value="dark">Dark</option>
+      <option value="dracula">Dracula</option>
+      <option value="solarized">Solarized Dark</option>
+      <option value="monokai">Monokai</option>
+      <option value="light">Light</option>
+    </select>
+    <div class="drawer-actions">
+      <button id="drawer-save" class="btn-primary">Save</button>
+      <button id="drawer-delete" class="btn-danger" style="display:none">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Key add modal -->
+<div id="key-modal" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-title">Add SSH Key</div>
+    <label>Name</label>
+    <input type="text" id="key-name" placeholder="My Key">
+    <label>Path to private key</label>
+    <input type="text" id="key-path" placeholder="~/.ssh/id_ed25519">
+    <div class="modal-actions">
+      <button id="key-save-btn" class="btn-primary">Add</button>
+      <button id="key-cancel-btn" class="btn-ghost">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="overlay" class="overlay" style="display:none"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
