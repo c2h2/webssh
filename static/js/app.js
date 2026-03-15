@@ -713,6 +713,12 @@ function openWs(tab, startMsg) {
           const resizeMsg = { type: 'resize', cols: tab.term.cols, rows: tab.term.rows };
           dbgLog(tab, 'send', `resize ${tab.term.cols}x${tab.term.rows}`);
           ws.send(JSON.stringify(resizeMsg));
+          // Reset all mouse tracking modes on the remote PTY so stale state from
+          // a previous program (vim, htop, etc.) doesn't leak raw escape bytes into
+          // the shell prompt on reconnect.
+          // Disables: X10, normal, button-event, any-event tracking + SGR/URXVT ext.
+          ws.send(JSON.stringify({ type: 'input',
+            data: '\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l' }));
         }
         // Replay scrollback after initial connect (new session: no-op; restore: history)
         replayScrollback(tab);
@@ -723,6 +729,9 @@ function openWs(tab, startMsg) {
       case 'disconnected':
         dbgLog(tab, 'warn', 'Session disconnected');
         setTabConnected(tab, false);
+        // Feed the mouse-reset sequence into xterm locally so its internal
+        // mouse-tracking state is cleared before the next reconnect.
+        tab.term?.write('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l');
         break;
       case 'error':
         dbgLog(tab, 'error', m.message);
