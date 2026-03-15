@@ -508,9 +508,15 @@ function createTab(label, theme, sessionType, hostId, sessionId) {
     <span class="conn-label">${esc(label)}</span>
     <span class="conn-status">connecting...</span>
     <div class="spacer"></div>
+    <button class="sm-btn btn-theme"   title="Cycle color theme">theme</button>
+    <button class="sm-btn btn-font-dec" title="Decrease font size">A-</button>
+    <button class="sm-btn btn-font-inc" title="Increase font size">A+</button>
     <button class="sm-btn btn-persist" title="Keep session on refresh" style="color:var(--accent)">&#128190; persist</button>
     <button class="sm-btn btn-select" title="Toggle mouse selection mode (disables mouse forwarding to terminal)">&#128392; select</button>
     <button class="sm-btn btn-reconnect" style="display:none">reconnect</button>`;
+  toolbar.querySelector('.btn-theme').addEventListener('click',    () => cycleTheme(id));
+  toolbar.querySelector('.btn-font-dec').addEventListener('click', () => changeFontSize(id, -1));
+  toolbar.querySelector('.btn-font-inc').addEventListener('click', () => changeFontSize(id, +1));
   toolbar.querySelector('.btn-persist').addEventListener('click',   () => togglePersist(id));
   toolbar.querySelector('.btn-select').addEventListener('click',    () => toggleSelectMode(id));
   toolbar.querySelector('.btn-reconnect').addEventListener('click', () => { if (tab._reconnect) tab._reconnect(); });
@@ -658,6 +664,25 @@ function toggleSelectMode(id) {
     : 'Toggle mouse selection mode (disables mouse forwarding to terminal)';
 }
 
+const THEME_ORDER = ['iterm2', 'dark', 'dracula', 'monokai', 'solarized', 'hacker', 'light'];
+
+function cycleTheme(id) {
+  const tab = tabs.find(t => t.id === id);
+  if (!tab?.term) return;
+  const idx = THEME_ORDER.indexOf(tab.theme);
+  tab.theme = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
+  tab.term.options.theme = THEMES[tab.theme];
+  tab.toolbar.querySelector('.btn-theme').textContent = tab.theme;
+}
+
+function changeFontSize(id, delta) {
+  const tab = tabs.find(t => t.id === id);
+  if (!tab?.term) return;
+  const next = Math.max(8, Math.min(32, tab.term.options.fontSize + delta));
+  tab.term.options.fontSize = next;
+  tab.fitAddon?.fit();
+}
+
 // ── WebSocket connection ───────────────────────────────────────────────────
 function openWs(tab, startMsg) {
   // Always include the stable session_id so the server can persist it
@@ -762,7 +787,8 @@ document.getElementById('btn-new-tab').addEventListener('click', () => openLocal
 // ── Keyboard shortcuts ─────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key === 't') { e.preventDefault(); openLocal(); }
-  if (e.ctrlKey && e.key === 'w') { e.preventDefault(); if (activeTab) closeTab(activeTab.id); }
+  const closeKey = e.key === 'w' && (e.ctrlKey || e.metaKey || e.altKey);
+  if (closeKey) { e.preventDefault(); if (activeTab) closeTab(activeTab.id); }
 });
 
 // ── Debug log ──────────────────────────────────────────────────────────────
