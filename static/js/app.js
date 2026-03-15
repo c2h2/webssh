@@ -119,13 +119,131 @@ const THEME_ACCENT = {
 // ── State ──────────────────────────────────────────────────────────────────
 let hosts = [];
 let keys  = [];
-let tabs  = [];
-let activeTab = null;
+let tabs  = [];         // flat list of ALL tabs across all slots
+let activeTab = null;   // tab in the currently focused slot
 let tabCounter = 0;
 let vaultPassword = null; // held in JS memory only
 let currentUser = null;   // username string when logged in
 
+// ── Split / pane-slot state ────────────────────────────────────────────────
+// A "slot" is one cell in the split grid. Each slot has its own mini tab-bar
+// and terminal area, and tracks its own activeTab.
+let splitMode = 1;        // 1 | 2 | 4
+let paneSlots = [];       // array of slot objects
+let focusedSlotIdx = 0;   // index into paneSlots
+
+// slot = { idx, el, tabsEl, terminalsEl, tabs:[], activeTab:null }
+
 const VAULT_PW_KEY = 'webssh_vault_pw';
+
+// ── Pane slot management ───────────────────────────────────────────────────
+function createPaneSlot(idx) {
+  const el = document.createElement('div');
+  el.className = 'pane-slot';
+  el.dataset.slotIdx = idx;
+
+  const tabBar = document.createElement('div');
+  tabBar.className = 'slot-tab-bar';
+  const tabsEl = document.createElement('div');
+  tabsEl.className = 'slot-tabs';
+  const newTabBtn = document.createElement('button');
+  newTabBtn.className = 'slot-new-tab-btn';
+  newTabBtn.title = 'New local terminal';
+  newTabBtn.textContent = '+';
+  newTabBtn.addEventListener('click', () => { focusSlot(idx); openLocal(); });
+  tabBar.appendChild(tabsEl);
+  tabBar.appendChild(newTabBtn);
+  el.appendChild(tabBar);
+
+  const terminalsEl = document.createElement('div');
+  terminalsEl.className = 'slot-terminals';
+  // Empty state for this slot
+  const emptyEl = document.createElement('div');
+  emptyEl.className = 'pane-slot-empty';
+  emptyEl.innerHTML = '<div class="empty-glyph">&#9001;_&#9002;</div><div>Open a session</div>';
+  terminalsEl.appendChild(emptyEl);
+  el.appendChild(terminalsEl);
+
+  el.addEventListener('mousedown', () => focusSlot(idx));
+
+  const slot = { idx, el, tabsEl, terminalsEl, emptyEl, tabs: [], activeTab: null };
+  return slot;
+}
+
+function focusSlot(idx) {
+  if (idx === focusedSlotIdx && paneSlots[idx] && paneSlots[idx].el.classList.contains('focused')) return;
+  paneSlots.forEach((s, i) => s.el.classList.toggle('focused', i === idx));
+  focusedSlotIdx = idx;
+  const slot = paneSlots[idx];
+  if (slot?.activeTab) {
+    activeTab = slot.activeTab;
+    requestAnimationFrame(() => { slot.activeTab.fitAddon?.fit(); slot.activeTab.term?.focus(); });
+  } else {
+    activeTab = null;
+  }
+  // Sync global #tabs display to current slot
+  syncGlobalTabBar();
+}
+
+function syncGlobalTabBar() {
+  // The global #tab-bar > #tabs shows the tabs of the focused slot
+  const globalTabs = document.getElementById('tabs');
+  globalTabs.innerHTML = '';
+  const slot = paneSlots[focusedSlotIdx];
+  if (!slot) return;
+  slot.tabs.forEach(t => globalTabs.appendChild(t.tabEl));
+}
+
+function setSplitMode(n) {
+  splitMode = n;
+  const terminalsRoot = document.getElementById('terminals');
+  terminalsRoot.className = n === 1 ? '' : `split-${n}`;
+
+  // Update split button active state
+  document.querySelectorAll('.split-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.split) === n);
+  });
+
+  // Grow or shrink paneSlots to match n
+  while (paneSlots.length < n) {
+    const idx = paneSlots.length;
+    const slot = createPaneSlot(idx);
+    paneSlots.push(slot);
+    terminalsRoot.appendChild(slot.el);
+  }
+  while (paneSlots.length > n) {
+    const removed = paneSlots.pop();
+    // Move any tabs from removed slot into slot 0
+    removed.tabs.forEach(tab => {
+      tab.slotIdx = 0;
+      paneSlots[0].tabs.push(tab);
+      paneSlots[0].terminalsEl.appendChild(tab.pane);
+    });
+    if (removed.tabs.length && !paneSlots[0].activeTab) {
+      activateTabInSlot(paneSlots[0], paneSlots[0].tabs[paneSlots[0].tabs.length - 1].id);
+    }
+    removed.el.remove();
+  }
+
+  // Update empty state visibility for all slots
+  paneSlots.forEach(updateSlotEmpty);
+
+  // Re-focus slot 0 if current focused slot no longer exists
+  if (focusedSlotIdx >= paneSlots.length) focusedSlotIdx = 0;
+  paneSlots.forEach((s, i) => s.el.classList.toggle('focused', i === focusedSlotIdx));
+  syncGlobalTabBar();
+
+  // Re-fit all active tabs
+  paneSlots.forEach(s => { if (s.activeTab) requestAnimationFrame(() => s.activeTab.fitAddon?.fit()); });
+}
+
+function updateSlotEmpty(slot) {
+  slot.emptyEl.style.display = slot.tabs.length === 0 ? 'flex' : 'none';
+}
+
+function getFocusedSlot() {
+  return paneSlots[focusedSlotIdx] || paneSlots[0];
+}
 
 // ── API helpers ────────────────────────────────────────────────────────────
 async function api(method, path, body) {
@@ -210,7 +328,7 @@ document.getElementById('btn-logout').addEventListener('click', async () => {
   try { sessionStorage.removeItem(VAULT_PW_KEY); } catch {}
   hosts = [];
   keys  = [];
-  tabs.forEach(t => closeTab(t.id));
+  [...tabs].forEach(t => forceCloseTab(t.id));
   document.getElementById('sidebar-user').textContent = '';
   document.getElementById('host-list').innerHTML = '';
   document.getElementById('key-list').innerHTML = '';
@@ -630,6 +748,8 @@ async function restoreSessions() {
     if (!Array.isArray(sessions)) return;
   } catch { return; }
 
+  // Restore all sessions into slot 0
+  focusSlot(0);
   for (const s of sessions) {
     const prefs = { theme: s.theme || 'iterm2', fontSize: s.font_size || 13 };
     if (s.session_type === 'local') {
@@ -669,6 +789,7 @@ function generateSessionId() {
 // ── Tabs & terminals ───────────────────────────────────────────────────────
 function createTab(label, theme, sessionType, hostId, sessionId, fontSize) {
   const id = `tab_${++tabCounter}`;
+  const slot = getFocusedSlot();
   const tab = {
     id,
     label,
@@ -680,18 +801,26 @@ function createTab(label, theme, sessionType, hostId, sessionId, fontSize) {
     sessionType: sessionType || 'local',
     hostId: hostId || null,
     sessionId: sessionId || generateSessionId(),
+    slotIdx: slot.idx,
   };
   tabs.push(tab);
+  slot.tabs.push(tab);
 
-  // Tab button
+  // Tab button — lives in the slot's tab-bar (mirrored to global #tabs when focused)
   const tabEl = document.createElement('div');
   tabEl.className = 'tab';
   tabEl.dataset.id = id;
   tabEl.innerHTML = `<div class="tab-dot connecting"></div><span>${esc(label)}</span><span class="tab-close">&#10005;</span>`;
-  tabEl.addEventListener('click', e => { if (!e.target.classList.contains('tab-close')) activateTab(id); });
+  tabEl.addEventListener('click', e => {
+    if (!e.target.classList.contains('tab-close')) {
+      focusSlot(slot.idx);
+      activateTab(id);
+    }
+  });
   tabEl.querySelector('.tab-close').addEventListener('click', e => { e.stopPropagation(); closeTab(id); });
-  document.getElementById('tabs').appendChild(tabEl);
   tab.tabEl = tabEl;
+  // Append to global #tabs (we're always creating in the focused slot)
+  document.getElementById('tabs').appendChild(tabEl);
 
   // Pane
   const pane = document.createElement('div');
@@ -754,11 +883,12 @@ function createTab(label, theme, sessionType, hostId, sessionId, fontSize) {
   pane.appendChild(dbgStrip);
   tab.dbgStrip = dbgStrip;
 
-  document.getElementById('terminals').appendChild(pane);
+  slot.terminalsEl.appendChild(pane);
   tab.pane = pane;
 
   document.getElementById('empty-state').style.display = 'none';
-  activateTab(id);
+  updateSlotEmpty(slot);
+  activateTabInSlot(slot, id);
   requestAnimationFrame(() => { initTerm(tab); applyTheme(id, tab.theme); });
   return tab;
 }
@@ -812,17 +942,28 @@ function initTerm(tab) {
   tab.ro = ro;
 }
 
+function activateTabInSlot(slot, id) {
+  const tab = slot.tabs.find(t => t.id === id);
+  if (!tab) return;
+  if (slot.activeTab && slot.activeTab.id !== id) {
+    slot.activeTab.pane.classList.remove('active');
+    slot.activeTab.tabEl.classList.remove('active');
+  }
+  slot.activeTab = tab;
+  tab.pane.classList.add('active');
+  tab.tabEl.classList.add('active');
+  // If this slot is focused, also update the global activeTab
+  if (slot.idx === focusedSlotIdx) {
+    activeTab = tab;
+  }
+  requestAnimationFrame(() => { tab.fitAddon?.fit(); tab.term?.focus(); });
+}
+
 function activateTab(id) {
   const tab = tabs.find(t => t.id === id);
   if (!tab) return;
-  if (activeTab && activeTab.id !== id) {
-    activeTab.pane.classList.remove('active');
-    activeTab.tabEl.classList.remove('active');
-  }
-  activeTab = tab;
-  tab.pane.classList.add('active');
-  tab.tabEl.classList.add('active');
-  requestAnimationFrame(() => { tab.fitAddon?.fit(); tab.term?.focus(); });
+  const slot = paneSlots[tab.slotIdx];
+  if (slot) activateTabInSlot(slot, id);
 }
 
 function closeTab(id) {
@@ -830,18 +971,48 @@ function closeTab(id) {
   if (!tab) return;
   if (!confirm(`Close "${tab.label}"?`)) return;
   if (tab.ws) { tab.ws.send(JSON.stringify({ type: 'close' })); tab.ws.close(); }
-  // Delete session + scrollback from the server DB
   if (tab.sessionId) {
     api('DELETE', `/api/sessions/${tab.sessionId}`).catch(() => {});
   }
   tab.pane.remove();
   tab.tabEl.remove();
   tab.ro?.disconnect();
+
+  const slot = paneSlots[tab.slotIdx];
   tabs = tabs.filter(t => t.id !== id);
-  if (activeTab?.id === id) {
-    activeTab = null;
-    if (tabs.length) activateTab(tabs[tabs.length - 1].id);
-    else document.getElementById('empty-state').style.display = 'flex';
+  if (slot) {
+    slot.tabs = slot.tabs.filter(t => t.id !== id);
+    if (slot.activeTab?.id === id) {
+      slot.activeTab = null;
+      if (slot.tabs.length) {
+        activateTabInSlot(slot, slot.tabs[slot.tabs.length - 1].id);
+      } else {
+        updateSlotEmpty(slot);
+      }
+    }
+    if (slot.idx === focusedSlotIdx) {
+      activeTab = slot.activeTab || null;
+      syncGlobalTabBar();
+    }
+  }
+
+  if (tabs.length === 0) document.getElementById('empty-state').style.display = 'flex';
+}
+
+function forceCloseTab(id) {
+  const tab = tabs.find(t => t.id === id);
+  if (!tab) return;
+  if (tab.ws) { try { tab.ws.send(JSON.stringify({ type: 'close' })); } catch {} tab.ws.close(); }
+  if (tab.sessionId) api('DELETE', `/api/sessions/${tab.sessionId}`).catch(() => {});
+  tab.pane.remove();
+  tab.tabEl.remove();
+  tab.ro?.disconnect();
+  const slot = paneSlots[tab.slotIdx];
+  tabs = tabs.filter(t => t.id !== id);
+  if (slot) {
+    slot.tabs = slot.tabs.filter(t => t.id !== id);
+    if (slot.activeTab?.id === id) slot.activeTab = null;
+    updateSlotEmpty(slot);
   }
 }
 
@@ -1032,6 +1203,11 @@ window.addEventListener('beforeunload', e => {
 // ── Toolbar ────────────────────────────────────────────────────────────────
 document.getElementById('btn-new-tab').addEventListener('click', () => openLocal());
 
+// Split buttons
+document.querySelectorAll('.split-btn').forEach(btn => {
+  btn.addEventListener('click', () => setSplitMode(parseInt(btn.dataset.split)));
+});
+
 // ── Keyboard shortcuts ─────────────────────────────────────────────────────
 // Use capture phase on window so we catch events before xterm consumes them.
 // Note: Cmd+W and Ctrl+W are intercepted by the browser before JS ever fires —
@@ -1069,6 +1245,10 @@ async function onLoggedIn() {
 
 // ── Init ───────────────────────────────────────────────────────────────────
 (async () => {
+  // Bootstrap pane slots (start with 1)
+  setSplitMode(1);
+  focusSlot(0);
+
   const loggedIn = await checkAuth();
   if (loggedIn) await onLoggedIn();
 })();

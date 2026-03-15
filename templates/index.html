@@ -121,11 +121,18 @@
   <!-- Main area -->
   <div id="main">
     <div id="tab-bar">
+      <div id="split-btns">
+        <button class="split-btn active" data-split="1" title="Single pane">&#9744;</button>
+        <button class="split-btn" data-split="2" title="Split left/right">&#9707;</button>
+        <button class="split-btn" data-split="4" title="4-pane grid">&#10063;</button>
+      </div>
       <div id="tabs"></div>
       <button id="btn-new-tab" class="icon-btn" title="New local terminal">+</button>
     </div>
-    <div id="terminals"></div>
-    <div id="empty-state">
+    <div id="terminals">
+      <!-- pane slots injected by JS -->
+    </div>
+    <div id="empty-state" style="display:none">
       <div class="empty-glyph">&#9001;_&#9002;</div>
       <div>Select a host or open a local terminal</div>
     </div>
