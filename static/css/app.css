@@ -16,9 +16,11 @@
   --tab-h:     32px;
   --header-h:  36px;
   --font:      'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Courier New', monospace;
+  --font-ui:   'Barlow', sans-serif;
+  --font-small: 'Outfit', sans-serif;
 }
 
-html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; }
+html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font-small); font-size: 13px; }
 
 /* ── Layout ───────────────────────────────────────────────────────────────── */
 #app { display: flex; height: 100vh; overflow: hidden; }
@@ -46,15 +48,18 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
 
 .logo {
   color: var(--accent);
-  font-weight: bold;
-  font-size: 12px;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: 13px;
   letter-spacing: 1px;
 }
 
 .sidebar-actions { display: flex; gap: 4px; }
 
 .sidebar-section-label {
+  font-family: var(--font-ui);
   font-size: 10px;
+  font-weight: 600;
   color: var(--text-dim);
   letter-spacing: 1.5px;
   padding: 8px 10px 4px;
@@ -128,7 +133,9 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   cursor: pointer;
   border-right: 1px solid var(--border);
   white-space: nowrap;
-  font-size: 11px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
   color: var(--text-dim);
   user-select: none;
   position: relative;
@@ -178,8 +185,8 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.term-toolbar .conn-label { color: var(--accent); font-size: 10px; letter-spacing: .5px; }
-.term-toolbar .conn-status { font-size: 10px; color: var(--text-dim); }
+.term-toolbar .conn-label { color: var(--accent); font-family: var(--font-ui); font-weight: 600; font-size: 11px; letter-spacing: .5px; }
+.term-toolbar .conn-status { font-family: var(--font-small); font-size: 10px; color: var(--text-dim); }
 .term-toolbar .spacer { flex: 1; }
 
 .xterm-container { flex: 1; overflow: hidden; padding: 4px; }
@@ -206,8 +213,8 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   cursor: pointer;
   padding: 2px 7px;
   border-radius: 3px;
-  font-size: 12px;
-  font-family: var(--font);
+  font-size: 13px;
+  font-family: var(--font-ui);
   line-height: 1.5;
 }
 .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -230,9 +237,9 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   padding: 6px 16px;
   border-radius: 3px;
   cursor: pointer;
-  font-family: var(--font);
-  font-size: 12px;
-  font-weight: bold;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
 }
 .btn-primary:hover { background: var(--accent2); }
 
@@ -243,8 +250,8 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   padding: 6px 14px;
   border-radius: 3px;
   cursor: pointer;
-  font-family: var(--font);
-  font-size: 12px;
+  font-family: var(--font-ui);
+  font-size: 13px;
 }
 .btn-ghost:hover { border-color: var(--text); color: var(--text); }
 
@@ -255,8 +262,8 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   padding: 6px 14px;
   border-radius: 3px;
   cursor: pointer;
-  font-family: var(--font);
-  font-size: 12px;
+  font-family: var(--font-ui);
+  font-size: 13px;
 }
 .btn-danger:hover { background: var(--danger); color: #fff; }
 
@@ -268,7 +275,7 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   padding: 1px 5px;
   border-radius: 2px;
   font-size: 10px;
-  font-family: var(--font);
+  font-family: var(--font-small);
 }
 .sm-btn:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -282,7 +289,7 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   padding: 1px 14px 1px 5px;
   border-radius: 2px;
   font-size: 10px;
-  font-family: var(--font);
+  font-family: var(--font-small);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23666'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 4px center;
@@ -319,8 +326,8 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   flex-direction: column;
   gap: 10px;
 }
-.modal-title { color: var(--accent); font-size: 14px; font-weight: bold; margin-bottom: 4px; }
-.modal-hint  { color: var(--text-dim); font-size: 11px; min-height: 14px; }
+.modal-title { color: var(--accent); font-family: var(--font-ui); font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+.modal-hint  { color: var(--text-dim); font-family: var(--font-small); font-size: 11px; min-height: 14px; }
 .modal-actions { display: flex; gap: 8px; margin-top: 6px; }
 
 /* ── Drawer ───────────────────────────────────────────────────────────────── */
@@ -348,9 +355,10 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   border-bottom: 1px solid var(--border);
   background: var(--bg3);
   flex-shrink: 0;
-  font-size: 12px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
   color: var(--accent);
-  font-weight: bold;
 }
 
 .drawer-body {
@@ -361,7 +369,7 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   flex-direction: column;
   gap: 6px;
 }
-.drawer-body label { color: var(--text-dim); font-size: 10px; letter-spacing: .5px; margin-top: 4px; }
+.drawer-body label { color: var(--text-dim); font-family: var(--font-small); font-size: 10px; letter-spacing: .5px; margin-top: 4px; }
 .drawer-body .hint { color: #444; font-size: 9px; font-weight: normal; }
 .drawer-actions { display: flex; gap: 8px; margin-top: 12px; }
 
@@ -372,7 +380,7 @@ input[type=text], input[type=password], input[type=number], select, textarea {
   color: var(--text);
   padding: 5px 8px;
   border-radius: 3px;
-  font-family: var(--font);
+  font-family: var(--font-small);
   font-size: 12px;
   width: 100%;
   outline: none;
@@ -395,7 +403,7 @@ select option { background: var(--bg2); }
   flex-direction: column;
   height: 120px;
   transition: height 0.15s ease;
-  font-family: var(--font);
+  font-family: var(--font-small);
 }
 .dbg-strip.collapsed { height: 22px; }
 .dbg-strip.collapsed .dbg-log { display: none; }
