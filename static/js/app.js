@@ -873,6 +873,14 @@ function openMosh(hostId, sessionId, restore, prefs) {
   }, 80);
 }
 
+// ── Warn before closing the browser tab/window ─────────────────────────────
+window.addEventListener('beforeunload', e => {
+  if (tabs.length > 0) {
+    e.preventDefault();
+    e.returnValue = ''; // required for Chrome to show the dialog
+  }
+});
+
 // ── Toolbar ────────────────────────────────────────────────────────────────
 document.getElementById('btn-new-tab').addEventListener('click', () => openLocal());
 
