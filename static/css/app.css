@@ -136,8 +136,8 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
 .tab:hover { background: var(--bg3); color: var(--text); }
 .tab.active {
   background: var(--bg);
-  color: var(--accent);
-  border-bottom: 2px solid var(--accent);
+  color: var(--tab-accent, var(--accent));
+  border-bottom: 2px solid var(--tab-accent, var(--accent));
 }
 .tab .tab-close {
   font-size: 10px;
@@ -271,6 +271,26 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
   font-family: var(--font);
 }
 .sm-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.term-toolbar .sel-theme {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 1px 14px 1px 5px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-family: var(--font);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23666'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  width: auto;
+  min-width: 80px;
+}
+.term-toolbar .sel-theme:hover { border-color: var(--accent); color: var(--accent); }
+.term-toolbar .sel-theme:focus { outline: none; border-color: var(--accent); }
 
 /* ── Modal ────────────────────────────────────────────────────────────────── */
 .modal {
