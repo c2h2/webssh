@@ -588,6 +588,11 @@ function initTerm(tab) {
     }
   });
 
+  // Alt+W closes the tab even when xterm has focus
+  term.onKey(({ domEvent: e }) => {
+    if (e.altKey && e.key === 'w') { e.preventDefault(); closeTab(tab.id); }
+  });
+
   const ro = new ResizeObserver(() => {
     if (tab.pane.classList.contains('active')) {
       fitAddon.fit();
@@ -785,11 +790,13 @@ function openMosh(hostId, sessionId, restore) {
 document.getElementById('btn-new-tab').addEventListener('click', () => openLocal());
 
 // ── Keyboard shortcuts ─────────────────────────────────────────────────────
-document.addEventListener('keydown', e => {
+// Use capture phase on window so we catch events before xterm consumes them.
+// Note: Cmd+W and Ctrl+W are intercepted by the browser before JS ever fires —
+// only Alt+W is reliably capturable from a web page.
+window.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key === 't') { e.preventDefault(); openLocal(); }
-  const closeKey = e.key === 'w' && (e.ctrlKey || e.metaKey || e.altKey);
-  if (closeKey) { e.preventDefault(); if (activeTab) closeTab(activeTab.id); }
-});
+  if (e.altKey && e.key === 'w')  { e.preventDefault(); if (activeTab) closeTab(activeTab.id); }
+}, { capture: true });
 
 // ── Debug log ──────────────────────────────────────────────────────────────
 function dbgLog(tab, level, msg) {
