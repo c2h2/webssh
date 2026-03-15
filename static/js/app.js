@@ -183,6 +183,7 @@ function focusSlot(idx) {
   }
   // Sync global #tabs display to current slot
   syncGlobalTabBar();
+  saveLayout();
 }
 
 function syncGlobalTabBar() {
@@ -235,6 +236,7 @@ function setSplitMode(n) {
 
   // Re-fit all active tabs
   paneSlots.forEach(s => { if (s.activeTab) requestAnimationFrame(() => s.activeTab.fitAddon?.fit()); });
+  saveLayout();
 }
 
 function updateSlotEmpty(slot) {
@@ -244,6 +246,133 @@ function updateSlotEmpty(slot) {
 function getFocusedSlot() {
   return paneSlots[focusedSlotIdx] || paneSlots[0];
 }
+
+// ── Layout persistence (localStorage) ─────────────────────────────────────
+const LAYOUT_KEY = 'webssh_layout';
+
+function saveLayout() {
+  if (!paneSlots.length) return;
+  const layout = {
+    splitMode,
+    focusedSlotIdx,
+    slots: paneSlots.map(s => ({
+      activeSessionId: s.activeTab?.sessionId || null,
+    })),
+  };
+  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch {}
+}
+
+function loadLayoutPrefs() {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+// Called after restoreSessions to re-apply saved split + active tabs per slot
+function applyLayoutPrefs(prefs) {
+  if (!prefs) return;
+  // Apply split mode (may create more slots)
+  if (prefs.splitMode && prefs.splitMode !== splitMode) setSplitMode(prefs.splitMode);
+  // Move tabs to their saved slots and activate saved active tab per slot
+  if (Array.isArray(prefs.slots)) {
+    prefs.slots.forEach((slotPref, slotIdx) => {
+      if (!paneSlots[slotIdx]) return;
+      const slot = paneSlots[slotIdx];
+      if (slotPref.activeSessionId) {
+        const tab = tabs.find(t => t.sessionId === slotPref.activeSessionId);
+        if (tab) {
+          // Move tab to this slot if it's in a different one
+          if (tab.slotIdx !== slotIdx) moveTabToSlot(tab.id, slotIdx);
+          activateTabInSlot(slot, tab.id);
+        }
+      }
+    });
+  }
+  const fi = typeof prefs.focusedSlotIdx === 'number' ? prefs.focusedSlotIdx : 0;
+  focusSlot(Math.min(fi, paneSlots.length - 1));
+}
+
+// ── Move tab to a different slot ───────────────────────────────────────────
+function moveTabToSlot(tabId, targetSlotIdx) {
+  const tab = tabs.find(t => t.id === tabId);
+  if (!tab) return;
+  const srcSlot = paneSlots[tab.slotIdx];
+  const dstSlot = paneSlots[targetSlotIdx];
+  if (!srcSlot || !dstSlot || srcSlot === dstSlot) return;
+
+  // Remove from src
+  srcSlot.tabs = srcSlot.tabs.filter(t => t.id !== tabId);
+  if (srcSlot.activeTab?.id === tabId) {
+    srcSlot.activeTab = srcSlot.tabs[srcSlot.tabs.length - 1] || null;
+    if (srcSlot.activeTab) activateTabInSlot(srcSlot, srcSlot.activeTab.id);
+    else { tab.pane.classList.remove('active'); tab.tabEl.classList.remove('active'); }
+  }
+  updateSlotEmpty(srcSlot);
+
+  // Move pane DOM to new slot
+  dstSlot.terminalsEl.appendChild(tab.pane);
+
+  // Add to dst
+  tab.slotIdx = targetSlotIdx;
+  dstSlot.tabs.push(tab);
+  updateSlotEmpty(dstSlot);
+  activateTabInSlot(dstSlot, tabId);
+
+  // Sync global tab bar if src or dst is focused
+  if (srcSlot.idx === focusedSlotIdx || dstSlot.idx === focusedSlotIdx) syncGlobalTabBar();
+  saveLayout();
+}
+
+// ── Tab right-click context menu ───────────────────────────────────────────
+const _ctxMenu = document.getElementById('tab-ctx-menu');
+
+function showTabCtxMenu(tabId, x, y) {
+  _ctxMenu.innerHTML = '';
+  const tab = tabs.find(t => t.id === tabId);
+  if (!tab) return;
+
+  // "Move to slot N" items (only when splitMode > 1)
+  if (splitMode > 1) {
+    paneSlots.forEach((slot, idx) => {
+      if (idx === tab.slotIdx) return; // skip current slot
+      const item = document.createElement('div');
+      item.className = 'ctx-item';
+      const names = ['Left', 'Right', 'Top-Left', 'Top-Right', 'Bottom-Left', 'Bottom-Right'];
+      const slotName = splitMode === 2
+        ? (idx === 0 ? 'Left' : 'Right')
+        : ['Top-Left', 'Top-Right', 'Bottom-Left', 'Bottom-Right'][idx] || `Slot ${idx + 1}`;
+      item.textContent = `Move to ${slotName}`;
+      item.addEventListener('click', () => { hideCtxMenu(); moveTabToSlot(tabId, idx); focusSlot(idx); });
+      _ctxMenu.appendChild(item);
+    });
+    const sep = document.createElement('div');
+    sep.className = 'ctx-separator';
+    _ctxMenu.appendChild(sep);
+  }
+
+  const closeItem = document.createElement('div');
+  closeItem.className = 'ctx-item';
+  closeItem.style.color = 'var(--danger)';
+  closeItem.textContent = 'Close tab';
+  closeItem.addEventListener('click', () => { hideCtxMenu(); closeTab(tabId); });
+  _ctxMenu.appendChild(closeItem);
+
+  _ctxMenu.style.display = 'block';
+  // Position, keeping within viewport
+  const menuW = 160, menuH = _ctxMenu.offsetHeight || 80;
+  _ctxMenu.style.left = Math.min(x, window.innerWidth  - menuW - 4) + 'px';
+  _ctxMenu.style.top  = Math.min(y, window.innerHeight - menuH - 4) + 'px';
+}
+
+function hideCtxMenu() { _ctxMenu.style.display = 'none'; }
+
+document.addEventListener('click',       hideCtxMenu);
+document.addEventListener('contextmenu', e => {
+  // Hide menu if clicking outside a tab
+  if (!e.target.closest('.tab')) hideCtxMenu();
+});
 
 // ── API helpers ────────────────────────────────────────────────────────────
 async function api(method, path, body) {
@@ -817,6 +946,12 @@ function createTab(label, theme, sessionType, hostId, sessionId, fontSize) {
       activateTab(id);
     }
   });
+  tabEl.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    focusSlot(slot.idx);
+    showTabCtxMenu(id, e.clientX, e.clientY);
+  });
   tabEl.querySelector('.tab-close').addEventListener('click', e => { e.stopPropagation(); closeTab(id); });
   tab.tabEl = tabEl;
   // Append to global #tabs (we're always creating in the focused slot)
@@ -860,28 +995,6 @@ function createTab(label, theme, sessionType, hostId, sessionId, fontSize) {
   xtermDiv.className = 'xterm-container';
   pane.appendChild(xtermDiv);
   tab.xtermDiv = xtermDiv;
-
-  // Debug log strip
-  const dbgStrip = document.createElement('div');
-  dbgStrip.className = 'dbg-strip';
-  dbgStrip.innerHTML = `
-    <div class="dbg-header">
-      <span class="dbg-title">DEBUG</span>
-      <div class="spacer"></div>
-      <button class="sm-btn dbg-clear">clear</button>
-      <button class="sm-btn dbg-toggle">&#9660;</button>
-    </div>
-    <div class="dbg-log"></div>`;
-  dbgStrip.querySelector('.dbg-clear').addEventListener('click', () => {
-    dbgStrip.querySelector('.dbg-log').innerHTML = '';
-  });
-  dbgStrip.querySelector('.dbg-toggle').addEventListener('click', () => {
-    dbgStrip.classList.toggle('collapsed');
-    dbgStrip.querySelector('.dbg-toggle').textContent = dbgStrip.classList.contains('collapsed') ? '▲' : '▼';
-    tab.fitAddon?.fit();
-  });
-  pane.appendChild(dbgStrip);
-  tab.dbgStrip = dbgStrip;
 
   slot.terminalsEl.appendChild(pane);
   tab.pane = pane;
@@ -956,6 +1069,7 @@ function activateTabInSlot(slot, id) {
   if (slot.idx === focusedSlotIdx) {
     activeTab = tab;
   }
+  saveLayout();
   requestAnimationFrame(() => { tab.fitAddon?.fit(); tab.term?.focus(); });
 }
 
@@ -1217,18 +1331,28 @@ window.addEventListener('keydown', e => {
   if (e.altKey && e.key === 'w')  { e.preventDefault(); if (activeTab) closeTab(activeTab.id); }
 }, { capture: true });
 
-// ── Debug log ──────────────────────────────────────────────────────────────
+// ── Debug log (shared global strip) ───────────────────────────────────────
+const _dbgStrip = document.getElementById('dbg-strip');
+const _dbgLog   = document.getElementById('dbg-log');
+document.getElementById('dbg-clear').addEventListener('click', () => { _dbgLog.innerHTML = ''; });
+document.getElementById('dbg-toggle').addEventListener('click', () => {
+  _dbgStrip.classList.toggle('collapsed');
+  document.getElementById('dbg-toggle').textContent = _dbgStrip.classList.contains('collapsed') ? '\u25b2' : '\u25bc';
+  paneSlots.forEach(s => s.activeTab?.fitAddon?.fit());
+});
+
 function dbgLog(tab, level, msg) {
-  if (!tab.dbgStrip) return;
-  const log = tab.dbgStrip.querySelector('.dbg-log');
-  const ts  = new Date().toISOString().slice(11, 23);
+  // Show the strip the first time something is logged
+  if (_dbgStrip.style.display === 'none') _dbgStrip.style.display = '';
+  const ts = new Date().toISOString().slice(11, 23);
   const colors = { info: '#00ff41', warn: '#ffaa00', error: '#ff4444', recv: '#00ccff', send: '#cc88ff' };
   const line = document.createElement('div');
   line.className = 'dbg-line';
-  line.innerHTML = `<span class="dbg-ts">${ts}</span><span class="dbg-level" style="color:${colors[level]||'#c8c8c8'}">${level.toUpperCase()}</span><span class="dbg-msg">${esc(msg)}</span>`;
-  log.appendChild(line);
-  while (log.children.length > 200) log.removeChild(log.firstChild);
-  log.scrollTop = log.scrollHeight;
+  const tabLabel = tab?.label ? `[${tab.label}] ` : '';
+  line.innerHTML = `<span class="dbg-ts">${ts}</span><span class="dbg-level" style="color:${colors[level]||'#c8c8c8'}">${level.toUpperCase()}</span><span class="dbg-msg">${esc(tabLabel + msg)}</span>`;
+  _dbgLog.appendChild(line);
+  while (_dbgLog.children.length > 500) _dbgLog.removeChild(_dbgLog.firstChild);
+  _dbgLog.scrollTop = _dbgLog.scrollHeight;
 }
 
 // ── Utility ────────────────────────────────────────────────────────────────
@@ -1238,15 +1362,18 @@ function esc(s) {
 
 // ── Post-login init ────────────────────────────────────────────────────────
 async function onLoggedIn() {
+  const layoutPrefs = loadLayoutPrefs();
   await Promise.all([loadHosts(), loadKeys()]);
   await checkVault();
   await restoreSessions();
+  applyLayoutPrefs(layoutPrefs);
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
 (async () => {
-  // Bootstrap pane slots (start with 1)
-  setSplitMode(1);
+  // Bootstrap pane slots — use saved split mode if available
+  const _initPrefs = loadLayoutPrefs();
+  setSplitMode(_initPrefs?.splitMode || 1);
   focusSlot(0);
 
   const loggedIn = await checkAuth();

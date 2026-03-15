@@ -598,14 +598,14 @@ select option { background: var(--bg2); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #444; }
 
-/* ── Debug strip ──────────────────────────────────────────────────────────── */
+/* ── Debug strip (shared, bottom of #main) ────────────────────────────────── */
 .dbg-strip {
   flex-shrink: 0;
   border-top: 1px solid var(--border);
   background: #080808;
   display: flex;
   flex-direction: column;
-  height: 120px;
+  height: 140px;
   transition: height 0.15s ease;
   font-family: var(--font-small);
 }
@@ -642,6 +642,28 @@ select option { background: var(--bg2); }
 .dbg-ts    { color: #444; flex-shrink: 0; }
 .dbg-level { flex-shrink: 0; width: 38px; }
 .dbg-msg   { color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Tab context menu ─────────────────────────────────────────────────────── */
+#tab-ctx-menu {
+  position: fixed;
+  z-index: 9999;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 0;
+  min-width: 150px;
+  box-shadow: 0 4px 16px #0008;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+.ctx-item {
+  padding: 6px 14px;
+  cursor: pointer;
+  color: var(--text);
+  white-space: nowrap;
+}
+.ctx-item:hover { background: var(--bg2); color: var(--accent); }
+.ctx-separator { border-top: 1px solid var(--border); margin: 4px 0; }
 
 /* ── xterm overrides ──────────────────────────────────────────────────────── */
 .xterm { height: 100% !important; }

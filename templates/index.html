@@ -136,6 +136,16 @@
       <div class="empty-glyph">&#9001;_&#9002;</div>
       <div>Select a host or open a local terminal</div>
     </div>
+    <!-- Shared debug strip (bottom of screen, across all panes) -->
+    <div id="dbg-strip" class="dbg-strip collapsed" style="display:none">
+      <div class="dbg-header">
+        <span class="dbg-title">DEBUG</span>
+        <div class="spacer"></div>
+        <button class="sm-btn" id="dbg-clear">clear</button>
+        <button class="sm-btn" id="dbg-toggle">&#9650;</button>
+      </div>
+      <div id="dbg-log" class="dbg-log"></div>
+    </div>
   </div>
 </div>
 
@@ -202,6 +212,7 @@
 </div>
 
 <div id="overlay" class="overlay" style="display:none"></div>
+<div id="tab-ctx-menu" style="display:none"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
