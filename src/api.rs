@@ -95,6 +95,8 @@ pub async fn auth_register(
     }
     auth::register(&st.db, &p.username, &p.password)
         .map_err(|e| err(StatusCode::BAD_REQUEST, &e.to_string()))?;
+    let actor = session_user(&jar, &st.server_key).unwrap_or_else(|| p.username.clone());
+    st.db.append_audit(&actor, "register", &p.username, "");
     let cookie = set_session_cookie(&p.username, &st.server_key);
     Ok((jar.add(cookie), Json(json!({"ok": true, "username": p.username}))))
 }
@@ -106,7 +108,11 @@ pub async fn auth_login(
 ) -> Result<(CookieJar, Json<Value>), (StatusCode, Json<Value>)> {
     let st = state.read().await;
     auth::login(&st.db, &p.username, &p.password)
-        .map_err(|_| err(StatusCode::UNAUTHORIZED, "Invalid credentials"))?;
+        .map_err(|e| {
+            st.db.append_audit(&p.username, "login_fail", &p.username, &e.to_string());
+            err(StatusCode::UNAUTHORIZED, "Invalid credentials")
+        })?;
+    st.db.append_audit(&p.username, "login", &p.username, "");
     let cookie = set_session_cookie(&p.username, &st.server_key);
     Ok((jar.add(cookie), Json(json!({"ok": true, "username": p.username}))))
 }
@@ -115,7 +121,10 @@ pub async fn auth_logout(
     State(state): State<SharedState>,
     jar: CookieJar,
 ) -> (CookieJar, Json<Value>) {
-    if let Some(username) = session_user(&jar, &state.read().await.server_key) {
+    let st = state.read().await;
+    if let Some(username) = session_user(&jar, &st.server_key) {
+        st.db.append_audit(&username, "logout", &username, "");
+        drop(st);
         state.write().await.vault_passwords.remove(&username);
     }
     let jar = jar.remove(Cookie::from("session"));
@@ -473,10 +482,12 @@ pub async fn admin_set_settings(
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let st = state.read().await;
-    require_admin(&jar, &st)?;
+    let caller = require_admin(&jar, &st)?;
     let open = body["registration_open"].as_bool().unwrap_or(true);
-    st.db.set_setting("registration_open", if open { "true" } else { "false" })
+    let val = if open { "true" } else { "false" };
+    st.db.set_setting("registration_open", val)
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    st.db.append_audit(&caller, "set_registration", "", &format!("registration_open={val}"));
     Ok(Json(json!({"ok": true})))
 }
 
@@ -510,6 +521,8 @@ pub async fn admin_set_user_disabled(
     let disabled = body["disabled"].as_bool().unwrap_or(false);
     st.db.set_user_disabled(&username, disabled)
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    let action = if disabled { "disable_user" } else { "enable_user" };
+    st.db.append_audit(&caller, action, &username, "");
     Ok(Json(json!({"ok": true})))
 }
 
@@ -525,7 +538,22 @@ pub async fn admin_delete_user(
     }
     st.db.delete_user(&username)
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    st.db.append_audit(&caller, "delete_user", &username, "");
     Ok(Json(json!({"ok": true})))
+}
+
+pub async fn admin_get_audit(
+    State(state): State<SharedState>,
+    jar: CookieJar,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let st = state.read().await;
+    require_admin(&jar, &st)?;
+    let limit  = params.get("limit").and_then(|v| v.parse().ok()).unwrap_or(200i64);
+    let offset = params.get("offset").and_then(|v| v.parse().ok()).unwrap_or(0i64);
+    let entries = st.db.list_audit(limit, offset);
+    let total   = st.db.audit_count();
+    Ok(Json(json!({ "entries": entries, "total": total })))
 }
 
 // ── Vault helpers ─────────────────────────────────────────────────────────────

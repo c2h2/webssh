@@ -39,22 +39,42 @@
     </div>
   </div>
 
-  <!-- Admin panel modal -->
-  <div id="admin-modal" class="modal" style="display:none">
-    <div class="modal-box" style="min-width:420px">
-      <div class="modal-title">Admin Panel</div>
-      <div class="admin-section">
-        <label class="admin-toggle-row">
-          <span>Allow new registrations</span>
-          <input type="checkbox" id="admin-reg-open">
-        </label>
+  <!-- Admin panel (full-screen overlay) -->
+  <div id="admin-panel" style="display:none">
+    <div id="admin-header">
+      <span id="admin-title">Admin Panel</span>
+      <div id="admin-tabs">
+        <button class="admin-tab active" data-tab="users">Users</button>
+        <button class="admin-tab" data-tab="audit">Audit Log</button>
+        <button class="admin-tab" data-tab="settings">Settings</button>
       </div>
-      <div class="admin-section">
-        <div class="admin-section-title">Users</div>
+      <button id="admin-close-btn" class="icon-btn">&#10005;</button>
+    </div>
+    <div id="admin-body">
+      <!-- Users tab -->
+      <div id="admin-tab-users" class="admin-tab-pane active">
         <div id="admin-user-list"></div>
       </div>
-      <div class="modal-actions">
-        <button id="admin-close-btn" class="btn-ghost">Close</button>
+      <!-- Audit log tab -->
+      <div id="admin-tab-audit" class="admin-tab-pane">
+        <div id="admin-audit-controls">
+          <input type="text" id="admin-audit-filter" placeholder="Filter by user, action..." style="max-width:280px">
+          <button class="sm-btn" id="admin-audit-refresh">refresh</button>
+          <span id="admin-audit-count" style="font-size:11px;color:var(--text-dim)"></span>
+        </div>
+        <div id="admin-audit-list"></div>
+        <div id="admin-audit-pagination"></div>
+      </div>
+      <!-- Settings tab -->
+      <div id="admin-tab-settings" class="admin-tab-pane">
+        <div class="admin-setting-row">
+          <div class="admin-setting-label">Allow new registrations</div>
+          <div class="admin-setting-desc">When disabled, only admins can create new accounts.</div>
+          <label class="admin-toggle-row">
+            <input type="checkbox" id="admin-reg-open">
+            <span id="admin-reg-open-label">open</span>
+          </label>
+        </div>
       </div>
     </div>
   </div>
