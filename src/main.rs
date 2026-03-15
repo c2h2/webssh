@@ -62,8 +62,11 @@ async fn main() {
         .route("/ws", get(ws_handler::ws_upgrade))
         .with_state(state);
 
-    let addr = "0.0.0.0:5001";
-    tracing::info!("WebSSH listening on http://{}", addr);
+    // Bind [::] to accept both IPv6 and IPv4 (dual-stack) on port 13337.
+    // On Linux the kernel maps IPv4 connections to ::ffff:x.x.x.x by default.
+    // On macOS dual-stack on [::] also works out of the box.
+    let addr = "[::]:13337";
+    tracing::info!("WebSSH listening on http://0.0.0.0:13337 and http://[::]:13337");
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
