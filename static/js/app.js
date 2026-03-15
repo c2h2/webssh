@@ -742,13 +742,8 @@ function applyTheme(id, name) {
   const accent = THEME_ACCENT[name] || '#00ff41';
   tab.tabEl.style.setProperty('--tab-accent', accent);
   tab.tabEl.querySelector('.tab-dot').style.background = accent;
-  // Persist to session DB
+  // Persist to session DB only (does not affect the host profile)
   persistTabPrefs(tab);
-  // Also update the host profile so next launch uses this theme
-  if (tab.hostId) {
-    const h = hosts.find(x => x.id === tab.hostId);
-    if (h) { h.theme = name; api('PUT', `/api/hosts/${tab.hostId}`, h).catch(() => {}); }
-  }
 }
 
 function changeFontSize(id, delta) {
