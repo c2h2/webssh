@@ -159,6 +159,7 @@ async fn handle_ws(socket: WebSocket, username: String, db: Db, state: SharedSta
                             label:        label.clone(),
                             theme:        theme.clone(),
                             font_size:    13,
+                            slot_idx:     0,
                             updated_at:   0,
                         };
                         if let Err(e) = db.upsert_session(&rec) {

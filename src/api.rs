@@ -436,7 +436,8 @@ pub async fn patch_session(
         .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "Not logged in"))?;
     let theme     = body["theme"].as_str().unwrap_or("").to_string();
     let font_size = body["font_size"].as_i64().unwrap_or(13);
-    st.db.patch_session_prefs(&id, &username, &theme, font_size)
+    let slot_idx  = body["slot_idx"].as_i64().unwrap_or(0);
+    st.db.patch_session_prefs(&id, &username, &theme, font_size, slot_idx)
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
     Ok(Json(json!({"ok": true})))
 }
@@ -451,6 +452,40 @@ pub async fn get_scrollback(
         .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "Not logged in"))?;
     let chunks = st.db.get_scrollback(&id);
     Ok(Json(json!({ "chunks": chunks })))
+}
+
+// ── User layout prefs (split_mode, focused_slot) ──────────────────────────────
+
+pub async fn get_layout_prefs(
+    State(state): State<SharedState>,
+    jar: CookieJar,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let st = state.read().await;
+    let username = session_user(&jar, &st.server_key)
+        .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "Not logged in"))?;
+    let split_mode    = st.db.get_setting(&format!("u:{}:split_mode",    username), "1");
+    let focused_slot  = st.db.get_setting(&format!("u:{}:focused_slot",  username), "0");
+    Ok(Json(json!({ "split_mode": split_mode.parse::<i64>().unwrap_or(1),
+                    "focused_slot": focused_slot.parse::<i64>().unwrap_or(0) })))
+}
+
+pub async fn set_layout_prefs(
+    State(state): State<SharedState>,
+    jar: CookieJar,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let st = state.read().await;
+    let username = session_user(&jar, &st.server_key)
+        .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "Not logged in"))?;
+    if let Some(v) = body["split_mode"].as_i64() {
+        st.db.set_setting(&format!("u:{}:split_mode",   username), &v.to_string())
+            .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    }
+    if let Some(v) = body["focused_slot"].as_i64() {
+        st.db.set_setting(&format!("u:{}:focused_slot", username), &v.to_string())
+            .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
+    }
+    Ok(Json(json!({"ok": true})))
 }
 
 // ── Admin routes ──────────────────────────────────────────────────────────────

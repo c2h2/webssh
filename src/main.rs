@@ -60,6 +60,8 @@ async fn main() {
         .route("/api/admin/users/:username/disable", post(api::admin_set_user_disabled))
         .route("/api/admin/users/:username",       delete(api::admin_delete_user))
         .route("/api/admin/audit",                 get(api::admin_get_audit))
+        // Layout prefs
+        .route("/api/layout",                      get(api::get_layout_prefs).post(api::set_layout_prefs))
         // Persistent sessions
         .route("/api/sessions",                    get(api::list_sessions))
         .route("/api/sessions/:id",                delete(api::delete_session).patch(api::patch_session))

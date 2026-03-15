@@ -247,59 +247,34 @@ function getFocusedSlot() {
   return paneSlots[focusedSlotIdx] || paneSlots[0];
 }
 
-// ── Layout persistence (localStorage) ─────────────────────────────────────
-const LAYOUT_KEY = 'webssh_layout';
+// ── Layout persistence (server DB) ────────────────────────────────────────
+let _layoutSaveTimer = null;
 
 function saveLayout() {
   if (!paneSlots.length) return;
-  const layout = {
-    splitMode,
-    focusedSlotIdx,
-    slots: paneSlots.map(s => ({
-      sessionIds: s.tabs.map(t => t.sessionId),
-      activeSessionId: s.activeTab?.sessionId || null,
-    })),
-  };
-  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch {}
+  // Debounce to avoid flooding on rapid tab switches
+  clearTimeout(_layoutSaveTimer);
+  _layoutSaveTimer = setTimeout(_doSaveLayout, 400);
 }
 
-function loadLayoutPrefs() {
-  try {
-    const raw = localStorage.getItem(LAYOUT_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch { return null; }
+function _doSaveLayout() {
+  if (!currentUser) return;
+  api('POST', '/api/layout', {
+    split_mode:    splitMode,
+    focused_slot:  focusedSlotIdx,
+  }).catch(() => {});
 }
 
-// Called after restoreSessions to re-apply saved split + active tabs per slot
+async function loadLayoutPrefs() {
+  try { return await api('GET', '/api/layout'); } catch { return null; }
+}
+
+// Called after restoreSessions: apply split_mode and focused_slot from server
 function applyLayoutPrefs(prefs) {
   if (!prefs) return;
-  // Apply split mode (creates extra slots if needed)
-  if (prefs.splitMode && prefs.splitMode !== splitMode) setSplitMode(prefs.splitMode);
-  // Move all tabs to their saved slots, then activate the saved active tab
-  if (Array.isArray(prefs.slots)) {
-    // Start from slot 1 upward — slot 0 is the default, no need to move those
-    prefs.slots.forEach((slotPref, slotIdx) => {
-      if (slotIdx === 0 || !paneSlots[slotIdx]) return;
-      const slot = paneSlots[slotIdx];
-      (slotPref.sessionIds || []).forEach(sid => {
-        const tab = tabs.find(t => t.sessionId === sid);
-        if (tab && tab.slotIdx !== slotIdx) moveTabToSlot(tab.id, slotIdx);
-      });
-      // Activate the saved active tab for this slot
-      if (slotPref.activeSessionId) {
-        const tab = tabs.find(t => t.sessionId === slotPref.activeSessionId);
-        if (tab) activateTabInSlot(slot, tab.id);
-      }
-    });
-    // Also activate saved active tab for slot 0
-    const s0pref = prefs.slots[0];
-    if (s0pref?.activeSessionId) {
-      const tab = tabs.find(t => t.sessionId === s0pref.activeSessionId);
-      if (tab) activateTabInSlot(paneSlots[0], tab.id);
-    }
-  }
-  const fi = typeof prefs.focusedSlotIdx === 'number' ? prefs.focusedSlotIdx : 0;
+  const sm = prefs.split_mode || 1;
+  if (sm !== splitMode) setSplitMode(sm);
+  const fi = typeof prefs.focused_slot === 'number' ? prefs.focused_slot : 0;
   focusSlot(Math.min(fi, paneSlots.length - 1));
 }
 
@@ -331,6 +306,7 @@ function moveTabToSlot(tabId, targetSlotIdx) {
 
   // Sync global tab bar if src or dst is focused
   if (srcSlot.idx === focusedSlotIdx || dstSlot.idx === focusedSlotIdx) syncGlobalTabBar();
+  persistTabPrefs(tab);
   saveLayout();
 }
 
@@ -886,9 +862,10 @@ async function restoreSessions() {
     if (!Array.isArray(sessions)) return;
   } catch { return; }
 
-  // Restore all sessions into slot 0
-  focusSlot(0);
   for (const s of sessions) {
+    // Route each session to its saved slot
+    const targetSlot = Math.min(s.slot_idx || 0, paneSlots.length - 1);
+    focusSlot(targetSlot);
     const prefs = { theme: s.theme || 'iterm2', fontSize: s.font_size || 13 };
     if (s.session_type === 'local') {
       openLocal(s.id, true, prefs);
@@ -1197,8 +1174,9 @@ function changeFontSize(id, delta) {
 function persistTabPrefs(tab) {
   if (!tab.sessionId) return;
   api('PATCH', `/api/sessions/${tab.sessionId}`, {
-    theme: tab.theme,
+    theme:     tab.theme,
     font_size: tab.fontSize || tab.term?.options.fontSize || 13,
+    slot_idx:  tab.slotIdx || 0,
   }).catch(() => {});
 }
 
@@ -1371,20 +1349,21 @@ function esc(s) {
 
 // ── Post-login init ────────────────────────────────────────────────────────
 async function onLoggedIn() {
-  const layoutPrefs = loadLayoutPrefs();
-  await Promise.all([loadHosts(), loadKeys()]);
+  const [, , layoutPrefs] = await Promise.all([loadHosts(), loadKeys(), loadLayoutPrefs()]);
+  // Apply split mode first so slots exist when sessions are restored into them
+  if (layoutPrefs?.split_mode && layoutPrefs.split_mode !== splitMode) {
+    setSplitMode(layoutPrefs.split_mode);
+  }
   await checkVault();
   await restoreSessions();
+  // Now focus the saved slot
   applyLayoutPrefs(layoutPrefs);
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
 (async () => {
-  // Bootstrap pane slots — use saved split mode if available
-  const _initPrefs = loadLayoutPrefs();
-  setSplitMode(_initPrefs?.splitMode || 1);
+  setSplitMode(1);
   focusSlot(0);
-
   const loggedIn = await checkAuth();
   if (loggedIn) await onLoggedIn();
 })();

@@ -70,6 +70,8 @@ pub struct SessionRecord {
     pub theme:        String,
     #[serde(default = "default_font_size")]
     pub font_size:    i64,
+    #[serde(default)]
+    pub slot_idx:     i64,
     pub updated_at:   i64,
 }
 
@@ -152,6 +154,9 @@ impl Db {
         // Migrations for existing databases
         conn.execute_batch(
             "ALTER TABLE sessions ADD COLUMN font_size INTEGER NOT NULL DEFAULT 13;",
+        ).ok();
+        conn.execute_batch(
+            "ALTER TABLE sessions ADD COLUMN slot_idx INTEGER NOT NULL DEFAULT 0;",
         ).ok();
         conn.execute_batch(
             "ALTER TABLE users ADD COLUMN is_admin    INTEGER NOT NULL DEFAULT 0;",
@@ -392,23 +397,23 @@ impl Db {
     pub fn upsert_session(&self, rec: &SessionRecord) -> anyhow::Result<()> {
         let now = now_secs();
         self.conn.lock().execute(
-            "INSERT INTO sessions (id, username, session_type, host_id, label, theme, font_size, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)
+            "INSERT INTO sessions (id, username, session_type, host_id, label, theme, font_size, slot_idx, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)
              ON CONFLICT(id) DO UPDATE SET
                session_type=excluded.session_type, host_id=excluded.host_id,
                label=excluded.label, theme=excluded.theme, font_size=excluded.font_size,
-               updated_at=excluded.updated_at",
+               slot_idx=excluded.slot_idx, updated_at=excluded.updated_at",
             params![rec.id, rec.username, rec.session_type, rec.host_id,
-                    rec.label, rec.theme, rec.font_size, now],
+                    rec.label, rec.theme, rec.font_size, rec.slot_idx, now],
         )?;
         Ok(())
     }
 
-    pub fn patch_session_prefs(&self, id: &str, username: &str, theme: &str, font_size: i64) -> anyhow::Result<()> {
+    pub fn patch_session_prefs(&self, id: &str, username: &str, theme: &str, font_size: i64, slot_idx: i64) -> anyhow::Result<()> {
         self.conn.lock().execute(
-            "UPDATE sessions SET theme=?1, font_size=?2, updated_at=?3
-             WHERE id=?4 AND username=?5",
-            params![theme, font_size, now_secs(), id, username],
+            "UPDATE sessions SET theme=?1, font_size=?2, slot_idx=?3, updated_at=?4
+             WHERE id=?5 AND username=?6",
+            params![theme, font_size, slot_idx, now_secs(), id, username],
         )?;
         Ok(())
     }
@@ -416,7 +421,7 @@ impl Db {
     pub fn list_sessions(&self, username: &str) -> anyhow::Result<Vec<SessionRecord>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, username, session_type, host_id, label, theme, font_size, updated_at
+            "SELECT id, username, session_type, host_id, label, theme, font_size, slot_idx, updated_at
              FROM sessions WHERE username=?1 ORDER BY updated_at DESC",
         )?;
         let rows = stmt.query_map(params![username], |r| Ok(SessionRecord {
@@ -427,7 +432,8 @@ impl Db {
             label:        r.get(4)?,
             theme:        r.get(5)?,
             font_size:    r.get(6)?,
-            updated_at:   r.get(7)?,
+            slot_idx:     r.get(7)?,
+            updated_at:   r.get(8)?,
         }))?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
