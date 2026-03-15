@@ -138,7 +138,16 @@ impl Db {
                 seq        INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_scrollback_session
-                ON scrollback(session_id, seq);",
+                ON scrollback(session_id, seq);
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id     INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts     INTEGER NOT NULL,
+                actor  TEXT NOT NULL DEFAULT '',
+                action TEXT NOT NULL,
+                target TEXT NOT NULL DEFAULT '',
+                detail TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts DESC);",
         )?;
         // Migrations for existing databases
         conn.execute_batch(
@@ -149,6 +158,11 @@ impl Db {
         ).ok();
         conn.execute_batch(
             "ALTER TABLE users ADD COLUMN is_disabled INTEGER NOT NULL DEFAULT 0;",
+        ).ok();
+        // If no admin exists yet (migration from pre-admin schema), promote the first user.
+        conn.execute_batch(
+            "UPDATE users SET is_admin=1 WHERE rowid=(SELECT MIN(rowid) FROM users)
+             AND (SELECT COUNT(*) FROM users WHERE is_admin=1)=0;",
         ).ok();
         Ok(Self { conn: Arc::new(Mutex::new(conn)), redis: None })
     }
@@ -243,6 +257,45 @@ impl Db {
             params![key, value],
         )?;
         Ok(())
+    }
+
+    // ── Audit log ─────────────────────────────────────────────────────────
+
+    pub fn append_audit(&self, actor: &str, action: &str, target: &str, detail: &str) {
+        let ts = now_secs() as i64;
+        let _ = self.conn.lock().execute(
+            "INSERT INTO audit_log (ts, actor, action, target, detail) VALUES (?1,?2,?3,?4,?5)",
+            params![ts, actor, action, target, detail],
+        );
+    }
+
+    pub fn list_audit(&self, limit: i64, offset: i64) -> Vec<serde_json::Value> {
+        let conn = self.conn.lock();
+        let mut stmt = match conn.prepare(
+            "SELECT id, ts, actor, action, target, detail
+             FROM audit_log ORDER BY ts DESC, id DESC LIMIT ?1 OFFSET ?2",
+        ) {
+            Ok(s) => s,
+            Err(_) => return vec![],
+        };
+        stmt.query_map(params![limit, offset], |r| {
+            Ok(serde_json::json!({
+                "id":     r.get::<_, i64>(0)?,
+                "ts":     r.get::<_, i64>(1)?,
+                "actor":  r.get::<_, String>(2)?,
+                "action": r.get::<_, String>(3)?,
+                "target": r.get::<_, String>(4)?,
+                "detail": r.get::<_, String>(5)?,
+            }))
+        }).ok()
+          .map(|rows| rows.filter_map(|r| r.ok()).collect())
+          .unwrap_or_default()
+    }
+
+    pub fn audit_count(&self) -> i64 {
+        self.conn.lock()
+            .query_row("SELECT COUNT(*) FROM audit_log", [], |r| r.get(0))
+            .unwrap_or(0)
     }
 
     pub fn set_vault_key(&self, username: &str, hex: &str) -> anyhow::Result<()> {
