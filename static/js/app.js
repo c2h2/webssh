@@ -784,11 +784,15 @@ function openWs(tab, startMsg) {
       case 'connected':
         dbgLog(tab, 'info', 'Session connected');
         setTabConnected(tab, true);
-        if (tab.term) {
+        // Double-rAF ensures the pane is fully laid out before fit+resize,
+        // which matters on restore when multiple tabs are created at once.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (!tab.term) return;
+          tab.fitAddon?.fit();
           const resizeMsg = { type: 'resize', cols: tab.term.cols, rows: tab.term.rows };
           dbgLog(tab, 'send', `resize ${tab.term.cols}x${tab.term.rows}`);
           ws.send(JSON.stringify(resizeMsg));
-        }
+        }));
         // Replay scrollback after initial connect (new session: no-op; restore: history)
         replayScrollback(tab);
         break;
