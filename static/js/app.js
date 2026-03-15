@@ -251,11 +251,27 @@ document.getElementById('settings-save-btn').addEventListener('click', async () 
 // ── Admin panel ───────────────────────────────────────────────────────────
 document.getElementById('btn-admin')?.addEventListener('click', openAdminPanel);
 document.getElementById('admin-close-btn')?.addEventListener('click', () => {
-  document.getElementById('admin-modal').style.display = 'none';
+  document.getElementById('admin-panel').style.display = 'none';
+});
+
+// Tab switching
+document.querySelectorAll('.admin-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.admin-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.admin-tab-pane').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(`admin-tab-${btn.dataset.tab}`).classList.add('active');
+    if (btn.dataset.tab === 'audit') loadAuditLog();
+  });
 });
 
 async function openAdminPanel() {
-  document.getElementById('admin-modal').style.display = 'flex';
+  document.getElementById('admin-panel').style.display = 'flex';
+  // Reset to Users tab
+  document.querySelectorAll('.admin-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.admin-tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelector('.admin-tab[data-tab="users"]').classList.add('active');
+  document.getElementById('admin-tab-users').classList.add('active');
   // Load settings
   const settings = await api('GET', '/api/admin/settings');
   document.getElementById('admin-reg-open').checked = !!settings.registration_open;
@@ -301,6 +317,75 @@ async function refreshAdminUserList() {
     list.appendChild(row);
   }
 }
+
+// ── Audit log ─────────────────────────────────────────────────────────────
+let auditAllEntries = [];
+let auditPage = 0;
+const AUDIT_PAGE_SIZE = 50;
+
+async function loadAuditLog(page) {
+  if (page === undefined) page = 0;
+  // Fetch all (up to 2000) and filter client-side for simplicity
+  if (page === 0) {
+    const res = await api('GET', '/api/admin/audit?limit=2000&offset=0');
+    auditAllEntries = Array.isArray(res.entries) ? res.entries : [];
+  }
+  const filter = document.getElementById('admin-audit-filter').value.trim().toLowerCase();
+  const filtered = filter
+    ? auditAllEntries.filter(e =>
+        (e.actor||'').toLowerCase().includes(filter) ||
+        (e.action||'').toLowerCase().includes(filter) ||
+        (e.target||'').toLowerCase().includes(filter) ||
+        (e.detail||'').toLowerCase().includes(filter))
+    : auditAllEntries;
+  auditPage = page;
+  const total = filtered.length;
+  const pageRows = filtered.slice(page * AUDIT_PAGE_SIZE, (page + 1) * AUDIT_PAGE_SIZE);
+
+  document.getElementById('admin-audit-count').textContent =
+    `${total} ${filter ? 'matching' : 'total'}`;
+
+  const list = document.getElementById('admin-audit-list');
+  list.innerHTML = '';
+  if (pageRows.length === 0) {
+    list.innerHTML = '<div style="color:var(--text-dim);padding:12px 0;font-size:11px">No entries.</div>';
+  } else {
+    for (const e of pageRows) {
+      const row = document.createElement('div');
+      row.className = 'audit-row';
+      row.innerHTML = `
+        <span class="audit-ts">${esc(e.ts || '')}</span>
+        <span class="audit-actor">${esc(e.actor || '')}</span>
+        <span class="audit-action">${esc(e.action || '')}</span>
+        <span class="audit-target">${esc(e.target || '')}</span>
+        <span class="audit-detail">${esc(e.detail || '')}</span>`;
+      list.appendChild(row);
+    }
+  }
+
+  // Pagination
+  const pages = Math.ceil(total / AUDIT_PAGE_SIZE);
+  const pg = document.getElementById('admin-audit-pagination');
+  pg.innerHTML = '';
+  if (pages > 1) {
+    for (let i = 0; i < pages; i++) {
+      const b = document.createElement('button');
+      b.className = 'sm-btn' + (i === page ? ' audit-page-active' : '');
+      b.textContent = i + 1;
+      b.addEventListener('click', () => loadAuditLog(i));
+      pg.appendChild(b);
+    }
+  }
+}
+
+document.getElementById('admin-audit-refresh')?.addEventListener('click', () => {
+  auditAllEntries = []; // force refetch
+  loadAuditLog(0);
+});
+document.getElementById('admin-audit-filter')?.addEventListener('input', () => {
+  // re-filter without refetching
+  if (auditAllEntries.length > 0) loadAuditLog(0);
+});
 
 // ── Vault ──────────────────────────────────────────────────────────────────
 async function checkVault() {
