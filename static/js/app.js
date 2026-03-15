@@ -256,6 +256,7 @@ function saveLayout() {
     splitMode,
     focusedSlotIdx,
     slots: paneSlots.map(s => ({
+      sessionIds: s.tabs.map(t => t.sessionId),
       activeSessionId: s.activeTab?.sessionId || null,
     })),
   };
@@ -273,22 +274,30 @@ function loadLayoutPrefs() {
 // Called after restoreSessions to re-apply saved split + active tabs per slot
 function applyLayoutPrefs(prefs) {
   if (!prefs) return;
-  // Apply split mode (may create more slots)
+  // Apply split mode (creates extra slots if needed)
   if (prefs.splitMode && prefs.splitMode !== splitMode) setSplitMode(prefs.splitMode);
-  // Move tabs to their saved slots and activate saved active tab per slot
+  // Move all tabs to their saved slots, then activate the saved active tab
   if (Array.isArray(prefs.slots)) {
+    // Start from slot 1 upward — slot 0 is the default, no need to move those
     prefs.slots.forEach((slotPref, slotIdx) => {
-      if (!paneSlots[slotIdx]) return;
+      if (slotIdx === 0 || !paneSlots[slotIdx]) return;
       const slot = paneSlots[slotIdx];
+      (slotPref.sessionIds || []).forEach(sid => {
+        const tab = tabs.find(t => t.sessionId === sid);
+        if (tab && tab.slotIdx !== slotIdx) moveTabToSlot(tab.id, slotIdx);
+      });
+      // Activate the saved active tab for this slot
       if (slotPref.activeSessionId) {
         const tab = tabs.find(t => t.sessionId === slotPref.activeSessionId);
-        if (tab) {
-          // Move tab to this slot if it's in a different one
-          if (tab.slotIdx !== slotIdx) moveTabToSlot(tab.id, slotIdx);
-          activateTabInSlot(slot, tab.id);
-        }
+        if (tab) activateTabInSlot(slot, tab.id);
       }
     });
+    // Also activate saved active tab for slot 0
+    const s0pref = prefs.slots[0];
+    if (s0pref?.activeSessionId) {
+      const tab = tabs.find(t => t.sessionId === s0pref.activeSessionId);
+      if (tab) activateTabInSlot(paneSlots[0], tab.id);
+    }
   }
   const fi = typeof prefs.focusedSlotIdx === 'number' ? prefs.focusedSlotIdx : 0;
   focusSlot(Math.min(fi, paneSlots.length - 1));
