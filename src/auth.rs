@@ -16,7 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::db::{Db, UserRecord};
 
 const SERVER_KEY_FILE: &str = "data/server.key";
-const TOKEN_TTL_SECS: u64   = 60 * 60 * 24 * 7; // 7 days
+const TOKEN_TTL_SECS: u64   = 60 * 60 * 24 * 30; // 30 days
 
 // ── Server signing key ────────────────────────────────────────────────────────
 

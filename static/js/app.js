@@ -249,8 +249,8 @@ document.getElementById('settings-save-btn').addEventListener('click', async () 
 });
 
 // ── Admin panel ───────────────────────────────────────────────────────────
-document.getElementById('btn-admin').addEventListener('click', openAdminPanel);
-document.getElementById('admin-close-btn').addEventListener('click', () => {
+document.getElementById('btn-admin')?.addEventListener('click', openAdminPanel);
+document.getElementById('admin-close-btn')?.addEventListener('click', () => {
   document.getElementById('admin-modal').style.display = 'none';
 });
 

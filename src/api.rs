@@ -36,6 +36,7 @@ fn set_session_cookie(username: &str, server_key: &[u8]) -> Cookie<'static> {
         .path("/")
         .http_only(true)
         .same_site(SameSite::Lax)
+        .max_age(time::Duration::days(30))
         .build()
 }
 
