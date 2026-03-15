@@ -50,6 +50,14 @@ const THEMES = {
     brightBlack: '#8e908c', brightRed: '#c82829', brightGreen: '#718c00', brightYellow: '#eab700',
     brightBlue: '#4271ae', brightMagenta: '#8959a8', brightCyan: '#3e999f', brightWhite: '#ffffff',
   },
+  iterm2: {
+    background: '#101421', foreground: '#fffbf6', cursor: '#fffbf6',
+    cursorAccent: '#101421', selectionBackground: '#ffffff40',
+    black: '#2e2e2e',      red: '#eb4129',      green: '#abe047',     yellow: '#f6c744',
+    blue: '#47a0f3',       magenta: '#7b5cb0',  cyan: '#64dbe8',      white: '#831f1e',
+    brightBlack: '#740c02', brightRed: '#eb4129', brightGreen: '#abe047', brightYellow: '#f6c744',
+    brightBlue: '#47a0f3',  brightMagenta: '#7b5cb0', brightCyan: '#64dbe8', brightWhite: '#fffbf6',
+  },
 };
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -352,7 +360,7 @@ function openDrawer(hostId) {
     document.getElementById('h-passphrase').value = '';
     document.getElementById('h-jump').value     = h.jump_host || '';
     document.getElementById('h-ssh-cmd').value  = h.ssh_command || '';
-    document.getElementById('h-theme').value    = h.theme || 'hacker';
+    document.getElementById('h-theme').value    = h.theme || 'iterm2';
   } else {
     title.textContent = 'New Host';
     delBtn.style.display = 'none';
@@ -360,7 +368,7 @@ function openDrawer(hostId) {
       (document.getElementById(id).value = ''));
     document.getElementById('h-port').value  = 22;
     document.getElementById('h-key').value   = '';
-    document.getElementById('h-theme').value = 'hacker';
+    document.getElementById('h-theme').value = 'iterm2';
   }
   document.getElementById('host-drawer').classList.add('open');
   document.getElementById('overlay').style.display = 'block';
@@ -471,7 +479,7 @@ function createTab(label, theme, sessionType, hostId, sessionId) {
     label,
     connected: false,
     persistent: true,
-    theme: theme || 'hacker',
+    theme: theme || 'iterm2',
     ws: null,
     sessionType: sessionType || 'local',
     hostId: hostId || null,
@@ -501,8 +509,10 @@ function createTab(label, theme, sessionType, hostId, sessionId) {
     <span class="conn-status">connecting...</span>
     <div class="spacer"></div>
     <button class="sm-btn btn-persist" title="Keep session on refresh" style="color:var(--accent)">&#128190; persist</button>
+    <button class="sm-btn btn-select" title="Toggle mouse selection mode (disables mouse forwarding to terminal)">&#128392; select</button>
     <button class="sm-btn btn-reconnect" style="display:none">reconnect</button>`;
   toolbar.querySelector('.btn-persist').addEventListener('click',   () => togglePersist(id));
+  toolbar.querySelector('.btn-select').addEventListener('click',    () => toggleSelectMode(id));
   toolbar.querySelector('.btn-reconnect').addEventListener('click', () => { if (tab._reconnect) tab._reconnect(); });
   pane.appendChild(toolbar);
   tab.toolbar = toolbar;
@@ -545,7 +555,7 @@ function createTab(label, theme, sessionType, hostId, sessionId) {
 
 function initTerm(tab) {
   const term = new Terminal({
-    theme: THEMES[tab.theme] || THEMES.hacker,
+    theme: THEMES[tab.theme] || THEMES.iterm2,
     fontFamily: "'Cascadia Code','Fira Code','JetBrains Mono','Courier New',monospace",
     fontSize: 13,
     lineHeight: 1.2,
@@ -554,6 +564,8 @@ function initTerm(tab) {
     allowTransparency: true,
     scrollback: 5000,
     macOptionIsMeta: true,
+    copyOnSelect: true,
+    rightClickSelectsWord: true,
   });
   const fitAddon   = new FitAddon.FitAddon();
   const linksAddon = new WebLinksAddon.WebLinksAddon();
@@ -631,6 +643,21 @@ function togglePersist(id) {
   // kept for UI compatibility.
 }
 
+function toggleSelectMode(id) {
+  const tab = tabs.find(t => t.id === id);
+  if (!tab) return;
+  tab.selectMode = !tab.selectMode;
+  const btn = tab.toolbar.querySelector('.btn-select');
+  // .xterm-mouse-area is the layer xterm uses to capture mouse events for PTY forwarding.
+  // Setting pointer-events:none lets browser handle mouse events for text selection instead.
+  const mouseArea = tab.xtermDiv.querySelector('.xterm-mouse-area');
+  if (mouseArea) mouseArea.style.pointerEvents = tab.selectMode ? 'none' : '';
+  btn.style.color = tab.selectMode ? 'var(--accent)' : '';
+  btn.title = tab.selectMode
+    ? 'Selection mode ON — mouse clicks go to browser (click to disable)'
+    : 'Toggle mouse selection mode (disables mouse forwarding to terminal)';
+}
+
 // ── WebSocket connection ───────────────────────────────────────────────────
 function openWs(tab, startMsg) {
   // Always include the stable session_id so the server can persist it
@@ -686,7 +713,7 @@ function openWs(tab, startMsg) {
 
 // ── Open sessions ──────────────────────────────────────────────────────────
 function openLocal(sessionId, restore) {
-  const tab = createTab('local', 'hacker', 'local', null, sessionId);
+  const tab = createTab('local', 'iterm2', 'local', null, sessionId);
   tab._reconnect = () => openWs(tab, { type: 'start_local', cols: tab.term?.cols || 220, rows: tab.term?.rows || 50 });
   setTimeout(async () => {
     await replayScrollback(tab);
