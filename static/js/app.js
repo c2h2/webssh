@@ -622,6 +622,7 @@ function activateTab(id) {
 function closeTab(id) {
   const tab = tabs.find(t => t.id === id);
   if (!tab) return;
+  if (!confirm(`Close "${tab.label}"?`)) return;
   if (tab.ws) { tab.ws.send(JSON.stringify({ type: 'close' })); tab.ws.close(); }
   // Delete session + scrollback from the server DB
   if (tab.sessionId) {
