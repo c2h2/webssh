@@ -29,9 +29,10 @@ impl PtySession {
             }
             ForkResult::Child => {
                 setsid()?;
-                unsafe {
-                    libc::ioctl(slave_fd, libc::TIOCSCTTY as libc::c_ulong, 0);
-                }
+                #[cfg(target_os = "linux")]
+                unsafe { libc::ioctl(slave_fd, libc::TIOCSCTTY as libc::c_int, 0); }
+                #[cfg(not(target_os = "linux"))]
+                unsafe { libc::ioctl(slave_fd, libc::TIOCSCTTY as libc::c_ulong, 0); }
                 dup2(slave_fd, libc::STDIN_FILENO)?;
                 dup2(slave_fd, libc::STDOUT_FILENO)?;
                 dup2(slave_fd, libc::STDERR_FILENO)?;
@@ -64,6 +65,9 @@ impl PtySession {
 
     pub fn resize(&self, cols: u16, rows: u16) {
         let ws = Winsize { ws_col: cols, ws_row: rows, ws_xpixel: 0, ws_ypixel: 0 };
+        #[cfg(target_os = "linux")]
+        unsafe { libc::ioctl(self.master_fd, libc::TIOCSWINSZ as libc::c_int, &ws); }
+        #[cfg(not(target_os = "linux"))]
         unsafe { libc::ioctl(self.master_fd, libc::TIOCSWINSZ as libc::c_ulong, &ws); }
     }
 
